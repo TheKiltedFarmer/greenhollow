@@ -105,7 +105,7 @@
 </div>
 <script>
 /* ================= CONFIG ================= */
-const TILE=32, MW=120, MH=96, KEY='greenhollow-v3';
+const TILE=32, MW=120, MH=96, KEY='greenhollow-v4';
 const DAY_START=6*60, DAY_END=24*60, MIN_PER_SEC=1/0.55;
 const STAMINA=24;
 const storageShim={
@@ -316,6 +316,9 @@ async function load(){
     if(r&&r.value){S=JSON.parse(r.value);
       S.farm=S.farm||{};S.bag=S.bag||[];S.folk=S.folk||{};S.needs=S.needs||[];S.shared=S.shared||[];
       S.built=S.built||[];if(!S.nodes)S.nodes=buildNodes();
+      /* if a save predates a map change, put the player back on solid ground */
+      const tx=Math.floor(S.px/TILE),ty=Math.floor(S.py/TILE);
+      if(!(tx>1&&ty>1&&tx<MW-2&&ty<MH-2)){S.px=30*TILE;S.py=38*TILE;}
       FOLK.forEach(f=>{if(!S.folk[f.id])S.folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
       return;}}catch(e){}
   S=newGame();await save();
@@ -432,6 +435,58 @@ function neighbourDoing(g){
               'walking the boundary','asleep under a tree, allegedly working'];
   return jobs[seed%jobs.length];
 }
+
+/* ================= WILD RESOURCES ================= */
+const NODEKIND={
+  tree :{item:'Wood',   n:3, stam:2, regrow:4, tool:'axe',  label:'Fell the tree'},
+  stump:{item:'Wood',   n:1, stam:1, regrow:3, tool:'axe',  label:'Split the stump'},
+  rock :{item:'Stone',  n:3, stam:2, regrow:5, tool:'pick', label:'Break the rock'},
+  clay :{item:'Clay',   n:2, stam:1, regrow:3, tool:'pick', label:'Dig the clay'},
+  reed :{item:'Fibre',  n:2, stam:1, regrow:2, tool:'hand', label:'Cut the reeds'},
+  bush :{item:'Berries',n:2, stam:1, regrow:2, tool:'hand', label:'Pick the berries'},
+};
+function buildNodes(){
+  const out={};
+  /* seed clusters, then scatter round them: woods look like woods, rock like outcrops */
+  const clusters=[];
+  for(let c=0;c<110;c++){
+    clusters.push({x:2+Math.floor(srand(hashStr('cx'+c))*(RIVER_X-4)),
+                   y:2+Math.floor(srand(hashStr('cy'+c))*(MH-4))});
+  }
+  for(let i=0;i<1500;i++){
+    const c=clusters[i%clusters.length];
+    const spread=4;
+    const x=Math.round(c.x+(srand(hashStr('sx'+i))-0.5)*spread*2);
+    const y=Math.round(c.y+(srand(hashStr('sy'+i))-0.5)*spread*2);
+    if(x<2||y<2||x>=RIVER_X-1||y>=MH-2)continue;
+    if(out[x+','+y])continue;
+    if(x>=FARM.x-1&&x<FARM.x+FARM.w+1&&y>=FARM.y-1&&y<FARM.y+FARM.h+1)continue;
+    if(Object.values(BLD).some(b=>x>=b.x-2&&x<b.x+b.w+2&&y>=b.y-2&&y<b.y+b.h+3))continue;
+    const r=srand(hashStr('nk'+i+'.'+x+'.'+y));
+    let k;
+    if(y<18)      k = r<0.62?'tree':(r<0.82?'stump':'bush');
+    else if(y>72) k = r<0.55?'rock':(r<0.78?'clay':'stump');
+    else if(x>86) k = r<0.5 ?'reed':(r<0.75?'clay':'bush');
+    else if(x<20) k = r<0.5 ?'rock':(r<0.75?'tree':'stump');
+    else          k = r<0.45?'tree':(r<0.7?'bush':(r<0.88?'reed':'rock'));
+    out[x+','+y]={k,cut:0};
+  }
+  /* a starter wood and some stone within sight of your own gate */
+  const near=[[FARM.x-3,FARM.y+2],[FARM.x-4,FARM.y+6],[FARM.x-3,FARM.y+11],[FARM.x-5,FARM.y+15],
+              [FARM.x+FARM.w+2,FARM.y+3],[FARM.x+FARM.w+3,FARM.y+8],[FARM.x+FARM.w+2,FARM.y+13],
+              [FARM.x+4,FARM.y-3],[FARM.x+9,FARM.y-4],[FARM.x+15,FARM.y-3],
+              [FARM.x+5,FARM.y+FARM.h+3],[FARM.x+12,FARM.y+FARM.h+2],[FARM.x+18,FARM.y+FARM.h+4]];
+  near.forEach((p,i)=>{
+    const k=['tree','tree','tree','stump','rock','rock','bush','reed','clay'][i%9];
+    for(let d=0;d<3;d++){
+      const x=p[0]+(d%2), y=p[1]+Math.floor(d/2);
+      if(x>1&&y>1&&x<RIVER_X-1&&y<MH-2&&!out[x+','+y])out[x+','+y]={k,cut:0};
+    }
+  });
+  return out;
+}
+function nodeAt(x,y){const n=S.nodes&&S.nodes[x+','+y];return (n&&n.cut<=S.day)?n:null;}
+function anyNodeAt(x,y){return S.nodes&&S.nodes[x+','+y];}
 /* ================= BAG ================= */
 function bagCount(item){const s=S.bag.find(x=>x.item===item);return s?s.n:0;}
 function bagAdd(item,n){
