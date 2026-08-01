@@ -310,7 +310,7 @@ function newGame(){
     px:30*TILE,py:38*TILE,scene:'world',started:false};
 }
 async function save(){try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}
-  if(NET.ready()&&Date.now()-(save._t||0)>15000){save._t=Date.now();NET.pushFarm();}}
+  if(NET.ready()&&Date.now()-(save._t||0)>12000){save._t=Date.now();NET.sync();}}
 async function load(){
   try{const r=await STORE.get(KEY);
     if(r&&r.value){S=JSON.parse(r.value);
@@ -323,152 +323,115 @@ async function load(){
 
 
 /* ============================================================
-   THE SHARED VALLEY  (optional)
-   Leave these blank and Greenhollow runs exactly as it does now,
-   entirely on this device. Fill them in and the table, the board
-   and your neighbours become real and shared.
+   THE SHARED VALLEY
+   No accounts, no email. Someone makes a valley, gets a code,
+   and texts it to their friends. Fill in the two lines below
+   once (host's own Supabase project) and every player after
+   that only ever types a code.
    ============================================================ */
-const SUPA_URL='';         /* e.g. https://xxxx.supabase.co   */
-const SUPA_ANON='';        /* the anon/publishable key         */
+const SUPA_URL='https://zhnilrohxoixsgmdyqiw.supabase.co';
+const SUPA_ANON='sb_publishable_egT53Ss4s2k3c3g1D0gU-w_F3zf7OtU';
 
 const NET={
-  sb:null, user:null, profile:null, on:false, peers:[], notes:[], err:'',
-  ready(){return !!(this.sb&&this.user);},
+  sb:null, code:null, secret:null, me:null,
+  commons:{}, growers:[], notes:[], deeds:[], err:'',
   init(){
     if(!SUPA_URL||!SUPA_ANON)return false;
     if(typeof supabase==='undefined'||!supabase.createClient)return false;
     if(!this.sb)this.sb=supabase.createClient(SUPA_URL,SUPA_ANON);
-    this.on=true;return true;
+    return true;
+  },
+  configured(){return !!(SUPA_URL&&SUPA_ANON);},
+  ready(){return !!(this.sb&&this.code&&this.secret&&this.me);},
+  mySecret(){
+    let s=null;
+    try{s=localStorage.getItem('gh-secret');}catch(e){}
+    if(!s){s=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+      try{localStorage.setItem('gh-secret',s);}catch(e){}}
+    return s;
+  },
+  look(){return {skin:S.player.skin,hair:S.player.hair,hairStyle:S.player.hairStyle,top:S.player.top};},
+  async create(name){
+    if(!this.init())return {error:'Shared valleys are not switched on in this copy.'};
+    this.secret=this.mySecret();
+    const {data,error}=await this.sb.rpc('valley_create',
+      {p_name:name||'',p_handle:S.player.name||'grower',p_secret:this.secret,p_look:this.look()});
+    if(error)return {error:error.message};
+    this.code=data.code;this.me=data.id;
+    try{localStorage.setItem('gh-valley',this.code);}catch(e){}
+    await this.pull();
+    return {code:this.code};
+  },
+  async join(code){
+    if(!this.init())return {error:'Shared valleys are not switched on in this copy.'};
+    this.secret=this.mySecret();
+    const {data,error}=await this.sb.rpc('valley_join',
+      {p_code:code,p_handle:S.player.name||'grower',p_secret:this.secret,p_look:this.look()});
+    if(error)return {error:error.message};
+    if(data.error)return {error:data.error};
+    this.code=data.code;this.me=data.id;
+    try{localStorage.setItem('gh-valley',this.code);}catch(e){}
+    await this.pull();
+    return {code:this.code};
   },
   async restore(){
     if(!this.init())return false;
-    try{
-      const {data}=await this.sb.auth.getSession();
-      if(data&&data.session){this.user=data.session.user;await this.afterSignIn();return true;}
-    }catch(e){this.err=String(e.message||e);}
-    return false;
+    let c=null;try{c=localStorage.getItem('gh-valley');}catch(e){}
+    if(!c)return false;
+    const r=await this.join(c);
+    return !r.error;
   },
-  async signIn(email){
-    if(!this.init())return 'Online play is not configured in this copy.';
-    try{
-      const {error}=await this.sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.href}});
-      return error?error.message:'Check your email — there is a link waiting.';
-    }catch(e){return String(e.message||e);}
-  },
-  async signOut(){ if(this.sb)await this.sb.auth.signOut(); this.user=null;this.profile=null; },
-  async afterSignIn(){
-    const uid=this.user.id;
-    const handle=(S.player.name||'').trim()||('grower-'+uid.slice(0,4));
-    await this.sb.from('profiles').upsert({id:uid,handle,look:{
-      skin:S.player.skin,hair:S.player.hair,hairStyle:S.player.hairStyle,top:S.player.top},
-      standing:S.standing,last_seen:new Date().toISOString()},{onConflict:'id'});
-    const {data:p}=await this.sb.from('profiles').select('*').eq('id',uid).single();
-    this.profile=p;
-    await this.pushFarm();
-    await this.pull();
-  },
-  async pushFarm(){
-    if(!this.ready())return;
-    await this.sb.from('farms').upsert({owner:this.user.id,plot:S.farm,bag:S.bag,
-      px:Math.round(S.px),py:Math.round(S.py),updated_at:new Date().toISOString()},{onConflict:'owner'});
+  leave(){this.code=null;this.me=null;this.growers=[];this.commons={};
+    try{localStorage.removeItem('gh-valley');}catch(e){}},
+  take(d){
+    if(!d||d.error)return;
+    this.me=d.me||this.me;
+    this.commons=d.commons||{};
+    this.growers=d.growers||[];
+    this.notes=d.notes||[];
+    this.deeds=d.deeds||[];
   },
   async pull(){
-    if(!this.ready())return;
-    const [{data:com},{data:nds},{data:pf}]=await Promise.all([
-      this.sb.from('commons').select('*').order('item'),
-      this.sb.from('needs').select('*').eq('day',new Date().toISOString().slice(0,10)),
-      this.sb.from('profiles').select('id,handle,look,standing,last_seen').order('last_seen',{ascending:false}).limit(24),
-    ]);
-    this.commons=com||[];
-    this.needs=nds||[];
-    this.peers=(pf||[]).filter(x=>x.id!==this.user.id);
+    if(!this.sb||!this.code)return;
+    const {data}=await this.sb.rpc('valley_state',{p_code:this.code,p_secret:this.secret});
+    this.take(data);
   },
-  async put(item,n){ if(!this.ready())return false;
-    const {error}=await this.sb.rpc('commons_put',{p_item:item,p_n:n||1});
-    if(!error)await this.pull(); return !error; },
-  async take(item,n){ if(!this.ready())return false;
-    const {error}=await this.sb.rpc('commons_take',{p_item:item,p_n:n||1});
-    if(!error)await this.pull(); return !error; },
-  async fill(id){ if(!this.ready())return false;
-    const {data,error}=await this.sb.rpc('need_fill',{p_id:id});
-    if(!error)await this.pull(); return !error&&data; },
-  async seedBoard(rows){ if(!this.ready())return;
-    await this.sb.rpc('needs_roll',{p_rows:rows}); await this.pull(); },
-  async visit(uid){ if(!this.ready())return null;
-    const [{data:f},{data:ns}]=await Promise.all([
-      this.sb.from('farms').select('*').eq('owner',uid).single(),
-      this.sb.from('notes').select('id,author,body,created_at').eq('farm',uid).order('created_at',{ascending:false}).limit(12),
-    ]);
-    return {farm:f,notes:ns||[]}; },
-  async leaveNote(uid,body){ if(!this.ready())return false;
-    const {error}=await this.sb.from('notes').insert({farm:uid,author:this.user.id,body:body.slice(0,240)});
-    return !error; },
+  async put(item,n){
+    const {data}=await this.sb.rpc('commons_put',{p_code:this.code,p_secret:this.secret,p_item:item,p_n:n||1});
+    if(data&&data.error)return data.error; this.take(data); return null;
+  },
+  async takeItem(item,n){
+    const {data}=await this.sb.rpc('commons_take',{p_code:this.code,p_secret:this.secret,p_item:item,p_n:n||1});
+    if(data&&data.error)return data.error; this.take(data); return null;
+  },
+  async sync(){
+    if(!this.ready())return;
+    await this.sb.rpc('grower_sync',{p_code:this.code,p_secret:this.secret,
+      p_plot:S.farm,p_look:this.look(),p_standing:S.standing});
+  },
+  async note(to,body){
+    const {data}=await this.sb.rpc('note_leave',{p_code:this.code,p_secret:this.secret,p_to:to,p_body:body});
+    return !(data&&data.error);
+  },
+  async water(to){
+    const {data}=await this.sb.rpc('water_for',{p_code:this.code,p_secret:this.secret,p_to:to});
+    await this.pull();
+    return data&&data.watered||0;
+  },
+  others(){return (this.growers||[]).filter(g=>g.id!==this.me);},
 };
-/* what a neighbour is doing while they are away — worked out, not stored */
-function neighbourDoing(peer){
-  const t=new Date(), h=t.getHours();
-  const seed=hash(peer.id+t.toISOString().slice(0,10));
-  const away=Math.floor((Date.now()-new Date(peer.last_seen).getTime())/3600000);
+/* what a neighbour is up to while they are away — worked out, never stored */
+function neighbourDoing(g){
+  const h=new Date().getHours();
+  const seed=hashStr(g.id+new Date().toISOString().slice(0,10));
+  const mins=Math.floor((Date.now()-new Date(g.last_seen).getTime())/60000);
+  if(mins<3)return 'here now';
   if(h<6||h>=22)return 'asleep in the cottage';
-  const jobs=['watering the near rows','carrying something to the table','arguing with a gate',
-              'sat on the wall by the well','pulling weeds and losing','up at the hives with Wren',
+  const jobs=['watering the near rows','carrying something to the table','out at the treeline',
+              'sat on the wall by the well','pulling weeds and losing','feeding the hens',
               'walking the boundary','asleep under a tree, allegedly working'];
-  return jobs[seed%jobs.length]+(away>20?' — has not been seen in a while':'');
+  return jobs[seed%jobs.length];
 }
-
-/* ================= WILD RESOURCES ================= */
-const NODEKIND={
-  tree :{item:'Wood',   n:3, stam:2, regrow:4, tool:'axe',  label:'Fell the tree'},
-  stump:{item:'Wood',   n:1, stam:1, regrow:3, tool:'axe',  label:'Split the stump'},
-  rock :{item:'Stone',  n:3, stam:2, regrow:5, tool:'pick', label:'Break the rock'},
-  clay :{item:'Clay',   n:2, stam:1, regrow:3, tool:'pick', label:'Dig the clay'},
-  reed :{item:'Fibre',  n:2, stam:1, regrow:2, tool:'hand', label:'Cut the reeds'},
-  bush :{item:'Berries',n:2, stam:1, regrow:2, tool:'hand', label:'Pick the berries'},
-};
-function buildNodes(){
-  /* scattered once, deterministically, so the valley is the same valley every time */
-  const out={};
-  const put=(x,y,k)=>{ if(x>1&&y>1&&x<RIVER_X-1&&y<MH-2) out[x+','+y]={k,cut:0}; };
-  /* seed clusters, then scatter round them: woods look like woods, rock like outcrops */
-  const clusters=[];
-  for(let c=0;c<110;c++){
-    clusters.push({x:2+Math.floor(srand(hashStr('cx'+c))*(RIVER_X-4)),
-                   y:2+Math.floor(srand(hashStr('cy'+c))*(MH-4))});
-  }
-  for(let i=0;i<1500;i++){
-    const c=clusters[i%clusters.length];
-    const spread=4;
-    const x=Math.round(c.x+(srand(hashStr('sx'+i))-0.5)*spread*2);
-    const y=Math.round(c.y+(srand(hashStr('sy'+i))-0.5)*spread*2);
-    if(x<2||y<2||x>=RIVER_X-1||y>=MH-2)continue;
-    if(out[x+','+y])continue;
-    if(x>=FARM.x-1&&x<FARM.x+FARM.w+1&&y>=FARM.y-1&&y<FARM.y+FARM.h+1)continue;  /* keep your ground clear */
-    if(Object.values(BLD).some(b=>x>=b.x-2&&x<b.x+b.w+2&&y>=b.y-2&&y<b.y+b.h+3))continue;
-    const r=srand(hashStr('nk'+i+'.'+x+'.'+y));
-    let k;
-    if(y<18)      k = r<0.62?'tree':(r<0.82?'stump':'bush');       /* woods to the north */
-    else if(y>72) k = r<0.55?'rock':(r<0.78?'clay':'stump');        /* stony ground south  */
-    else if(x>86) k = r<0.5 ?'reed':(r<0.75?'clay':'bush');         /* wet ground by the river */
-    else if(x<20) k = r<0.5 ?'rock':(r<0.75?'tree':'stump');        /* the west ridge */
-    else          k = r<0.45?'tree':(r<0.7?'bush':(r<0.88?'reed':'rock'));
-    put(x,y,k);
-  }
-  /* a starter wood and some stone within sight of your own gate */
-  const near=[[FARM.x-3,FARM.y+2],[FARM.x-4,FARM.y+6],[FARM.x-3,FARM.y+11],[FARM.x-5,FARM.y+15],
-              [FARM.x+FARM.w+2,FARM.y+3],[FARM.x+FARM.w+3,FARM.y+8],[FARM.x+FARM.w+2,FARM.y+13],
-              [FARM.x+4,FARM.y-3],[FARM.x+9,FARM.y-4],[FARM.x+15,FARM.y-3],
-              [FARM.x+5,FARM.y+FARM.h+3],[FARM.x+12,FARM.y+FARM.h+2],[FARM.x+18,FARM.y+FARM.h+4]];
-  near.forEach((p,i)=>{
-    const k=['tree','tree','tree','stump','rock','rock','bush','reed','clay'][i%9];
-    for(let d=0;d<3;d++){
-      const x=p[0]+(d%2), y=p[1]+Math.floor(d/2);
-      if(x>1&&y>1&&x<RIVER_X-1&&y<MH-2&&!out[x+','+y])out[x+','+y]={k,cut:0};
-    }
-  });
-  return out;
-}
-function nodeAt(x,y){const n=S.nodes&&S.nodes[x+','+y];return (n&&n.cut<=S.day)?n:null;}
-function anyNodeAt(x,y){return S.nodes&&S.nodes[x+','+y];}
 /* ================= BAG ================= */
 function bagCount(item){const s=S.bag.find(x=>x.item===item);return s?s.n:0;}
 function bagAdd(item,n){
@@ -1297,22 +1260,49 @@ function reward(whoId){
 /* ================= SHARING TABLE ================= */
 function openTable(){
   paused=true;
-  const mine=S.bag.filter(b=>!SEED_OF[b.item]);
-  const rows=mine.map((b,i)=>'<div class="row"><div><strong>'+esc(b.item)+'</strong><div class="hint">you have '+b.n+'</div></div>'
+  const shared=NET.ready();
+  const mine=S.bag.filter(b=>b.n>0);
+  const give=mine.map((b,i)=>'<div class="row"><div><strong>'+esc(b.item)+'</strong><div class="hint">you have '+b.n+'</div></div>'
     +'<button data-give="'+i+'">Leave one</button></div>').join('')
     ||'<div class="hint">You have nothing to leave yet.</div>';
+  let onTable;
+  if(shared){
+    const keys=Object.keys(NET.commons||{}).filter(k=>NET.commons[k]>0);
+    onTable=keys.length
+      ? keys.map(k=>'<div class="row"><div><strong>'+esc(k)+'</strong><div class="hint">'+NET.commons[k]+' here</div></div>'
+          +'<button class="primary" data-take="'+esc(k)+'">Take one</button></div>').join('')
+      : '<div class="hint">Bare at the moment. Somebody will see to it.</div>';
+  }else{
+    onTable=(S.shared&&S.shared.length)
+      ? '<div class="card"><div class="hint">'+S.shared.map(esc).join(', ')+'</div></div>'
+      : '<div class="hint">Nothing on it just now.</div>';
+  }
   OR('<h3>The sharing table</h3>'
-    +'<div class="hint" style="margin-bottom:10px;">Surplus goes here. It never sits long. Leaving something is how this valley keeps count of you.</div>'
-    +(S.shared.length?('<div class="card"><strong>On the table now</strong><div class="hint">'+S.shared.map(esc).join(', ')+'</div></div>'):'')
-    +rows
+    +'<div class="hint" style="margin-bottom:10px;">'
+    +(shared?('Shared with everyone in <strong>'+esc(NET.code)+'</strong>. Take what you need, put back what you can — nobody is counting.')
+            :'Surplus goes here. Leaving something is how this valley keeps count of you.')
+    +'</div>'
+    +'<h3 style="font-size:14px;margin:12px 0 6px;">On the table</h3>'+onTable
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">In your basket</h3>'+give
     +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
   document.querySelectorAll('[data-give]').forEach(b=>{b.onclick=async()=>{
     const it=mine[parseInt(b.dataset.give)];
     if(!bagTake(it.item,1))return;
-    S.shared.push(it.item);if(S.shared.length>6)S.shared.shift();
+    if(shared){
+      const err=await NET.put(it.item,1);
+      if(err){bagAdd(it.item,1);toast(err);return;}
+    }else{
+      S.shared=S.shared||[];S.shared.push(it.item);if(S.shared.length>6)S.shared.shift();
+    }
     S.standing++;
     FOLK.forEach(f=>{if(f.likes.indexOf(it.item)>=0)S.folk[f.id].friend=Math.min(20,S.folk[f.id].friend+1);});
     await save();toast('Left on the table. Somebody will be glad of it.');openTable();
+  };});
+  document.querySelectorAll('[data-take]').forEach(b=>{b.onclick=async()=>{
+    const item=b.dataset.take;
+    const err=await NET.takeItem(item,1);
+    if(err){toast(err);return;}
+    bagAdd(item,1);await save();toast('+1 '+item);openTable();
   };});
   document.getElementById('closeB').onclick=close;
 }
@@ -1404,77 +1394,112 @@ function openBag(){
 
 function openValley(){
   paused=true;
-  if(!NET.on&&!(SUPA_URL&&SUPA_ANON)){
-    OR('<h3>The wider valley</h3>'
-      +'<p class="sub">This copy of Greenhollow is playing on its own. That is a perfectly good way to play — the table, the board and the folk all work.</p>'
-      +'<div class="card"><strong>To share a valley with people you know</strong><div class="hint">'
-      +'It needs a Supabase project: run <em>greenhollow_schema.sql</em> in the SQL editor, then put the project URL and anon key into SUPA_URL and SUPA_ANON at the top of this file. '
-      +'Everyone who opens your copy then works the same table, the same board, and can walk each other\u2019s ground.</div></div>'
+  if(!NET.configured()){
+    OR('<h3>Playing with friends</h3>'
+      +'<p class="sub">This copy is running on its own — which works perfectly well. To let friends share your valley, '
+      +'the person hosting the game runs <em>greenhollow_schema.sql</em> once in a Supabase project and pastes two lines into this file. '
+      +'After that nobody else has to set up anything: they type a code and they are in.</p>'
       +'<div class="acts"><button class="primary" id="closeB">Back</button></div>');
     document.getElementById('closeB').onclick=close;return;
   }
   if(!NET.ready()){
-    OR('<h3>Join the valley</h3>'
-      +'<p class="sub">One link by email — no password to remember. Your farm comes with you to any device.</p>'
-      +'<input type="email" id="em" placeholder="you@example.com" style="width:100%;background:rgba(237,230,214,0.05);border:1px solid var(--line);color:var(--parchment);padding:10px 12px;border-radius:3px;font-size:15px;"/>'
+    OR('<h3>Playing with friends</h3>'
+      +'<p class="sub">Start a valley and share the code, or type the code a friend sent you. No sign-up, no password.</p>'
+      +'<div class="card"><strong>Start a new valley</strong>'
+      +'<div class="hint" style="margin-bottom:8px;">You will get a code to text people.</div>'
+      +'<button class="primary" id="mk">Make a valley</button></div>'
+      +'<div class="card" style="margin-top:10px;"><strong>Join one</strong>'
+      +'<div class="hint" style="margin-bottom:8px;">Type the code exactly as it was sent.</div>'
+      +'<input type="text" id="cd" placeholder="HOLLOW-4b2" autocapitalize="characters" '
+      +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);'
+      +'padding:11px 12px;border-radius:4px;font-size:17px;letter-spacing:.08em;font-family:IBM Plex Mono,monospace;"/>'
+      +'<div class="acts"><button class="primary" id="jn">Join</button></div></div>'
       +'<div class="hint" id="msg" style="margin-top:8px;"></div>'
-      +'<div class="acts"><button class="primary" id="go">Send the link</button><button id="closeB">Not now</button></div>');
-    document.getElementById('go').onclick=async()=>{
-      const em=document.getElementById('em').value.trim();
-      if(!em){document.getElementById('msg').innerText='An email address, please.';return;}
-      document.getElementById('msg').innerText='Sending…';
-      document.getElementById('msg').innerText=await NET.signIn(em);
+      +'<div class="acts"><button id="closeB">Not now</button></div>');
+    const msg=t=>{const m=document.getElementById('msg');if(m)m.innerText=t;};
+    document.getElementById('mk').onclick=async()=>{
+      msg('Breaking ground…');
+      const r=await NET.create('');
+      if(r.error){msg(r.error);return;}
+      openValley();
     };
-    document.getElementById('closeB').onclick=close;return;
+    document.getElementById('jn').onclick=async()=>{
+      const c=document.getElementById('cd').value.trim();
+      if(!c){msg('Type the code first.');return;}
+      msg('Opening the gate…');
+      const r=await NET.join(c);
+      if(r.error){msg(r.error);return;}
+      openValley();
+    };
+    document.getElementById('closeB').onclick=close;
+    return;
   }
-  const peers=NET.peers||[];
-  const rows=peers.map(p=>{
-    const seen=Math.floor((Date.now()-new Date(p.last_seen).getTime())/60000);
-    const here=seen<5;
-    return '<div class="row"><div>'
-      +'<strong>'+esc(p.handle)+'</strong> '+(here?'<span class="hint" style="color:var(--green);">· here now</span>':'')
-      +'<div class="hint">'+esc(neighbourDoing(p))+'</div></div>'
-      +'<button data-visit="'+p.id+'">Walk over</button></div>';
-  }).join('')||'<div class="hint">Nobody else has taken ground yet. Send them the link.</div>';
-  OR('<h3>The valley</h3>'
-    +'<p class="sub">Signed in as <strong>'+esc(NET.profile?NET.profile.handle:'you')+'</strong>. The table and the board are shared with everyone here.</p>'
-    +rows
-    +'<div class="acts"><button id="syncB">Refresh</button><button id="outB">Sign out</button>'
+  const mine=(NET.growers||[]).find(g=>g.id===NET.me);
+  const rows=NET.others().map(g=>{
+    const doing=neighbourDoing(g);
+    const here=doing==='here now';
+    const plot=g.plot||{};
+    const dry=Object.keys(plot).filter(k=>plot[k].crop&&!plot[k].wet).length;
+    return '<div class="row"><div style="min-width:0;"><strong>'+esc(g.handle)+'</strong>'
+      +(here?' <span class="hint" style="color:var(--green);">· here now</span>':'')
+      +'<div class="hint">'+esc(doing)+(dry?(' · <span style="color:var(--amber);">'+dry+' rows gone dry</span>'):'')+'</div></div>'
+      +'<button data-visit="'+g.id+'">Walk over</button></div>';
+  }).join('')||'<div class="hint">Nobody else yet. Send them the code.</div>';
+  const notes=(NET.notes||[]).slice(0,5).map(n=>
+    '<div class="card"><div class="hint"><strong>'+esc(n.from)+':</strong> '+esc(n.body)+'</div></div>').join('');
+  const deeds=(NET.deeds||[]).slice(0,5).map(d=>'<div class="hint">· '+esc(d.body)+'</div>').join('');
+  OR('<h3>Your valley</h3>'
+    +'<div class="card"><strong>Code</strong>'
+    +'<div style="font-family:IBM Plex Mono,monospace;font-size:26px;letter-spacing:.1em;color:var(--green);margin:4px 0;">'+esc(NET.code)+'</div>'
+    +'<div class="hint">Text this to anyone you want in. They type it once and they are in for good.</div>'
+    +'<div class="acts"><button id="cpy">Copy code</button></div></div>'
+    +(notes?('<h3 style="font-size:14px;margin:14px 0 6px;">On your gate</h3>'+notes):'')
+    +'<h3 style="font-size:14px;margin:14px 0 6px;">Everyone here</h3>'+rows
+    +(deeds?('<h3 style="font-size:14px;margin:14px 0 6px;">Lately</h3>'+deeds):'')
+    +'<div class="acts"><button id="syncB">Refresh</button><button id="outB">Leave valley</button>'
     +'<button class="primary" id="closeB">Back</button></div>');
+  document.getElementById('cpy').onclick=()=>{
+    try{navigator.clipboard.writeText(NET.code);toast('Code copied');}catch(e){toast(NET.code);}
+  };
   document.querySelectorAll('[data-visit]').forEach(b=>b.onclick=()=>openVisit(b.dataset.visit));
   document.getElementById('syncB').onclick=async()=>{await NET.pull();openValley();};
-  document.getElementById('outB').onclick=async()=>{await NET.signOut();close();toast('Back to your own valley.');};
+  document.getElementById('outB').onclick=()=>{NET.leave();close();toast('Back to your own valley.');};
   document.getElementById('closeB').onclick=close;
 }
-async function openVisit(uid){
+async function openVisit(id){
   paused=true;
-  OR('<h3>Walking over…</h3><div class="hint">Opening the gate.</div>');
-  const v=await NET.visit(uid);
-  const p=(NET.peers||[]).find(x=>x.id===uid)||{handle:'a neighbour'};
-  if(!v||!v.farm){OR('<h3>'+esc(p.handle)+'</h3><div class="hint">No ground broken here yet.</div>'
-    +'<div class="acts"><button class="primary" id="closeB">Back</button></div>');
-    document.getElementById('closeB').onclick=openValley;return;}
-  const plot=v.farm.plot||{};
+  const g=(NET.growers||[]).find(x=>x.id===id);
+  if(!g){openValley();return;}
+  const plot=g.plot||{};
   const tiles=Object.keys(plot);
   const growing=tiles.filter(k=>plot[k].crop).length;
   const ripe=tiles.filter(k=>plot[k].crop&&CROPS[plot[k].crop]&&plot[k].stage>=CROPS[plot[k].crop].days).length;
   const dry=tiles.filter(k=>plot[k].crop&&!plot[k].wet).length;
-  const notes=(v.notes||[]).map(n=>'<div class="card"><div class="hint">'+esc(n.body)+'</div></div>').join('');
-  OR('<h3>'+esc(p.handle)+'\u2019s ground</h3>'
-    +'<p class="sub">'+esc(neighbourDoing(p))+'.</p>'
+  OR('<h3>'+esc(g.handle)+'\u2019s ground</h3>'
+    +'<p class="sub">'+esc(neighbourDoing(g))+'.</p>'
     +'<div class="card"><strong>What is in</strong><div class="hint">'
     +tiles.length+' squares turned · '+growing+' growing · '+ripe+' ready to lift'
     +(dry?(' · <span style="color:var(--amber);">'+dry+' gone dry</span>'):' · all watered')+'</div></div>'
+    +(dry?('<div class="card"><strong>Their rows are dry</strong>'
+        +'<div class="hint" style="margin-bottom:8px;">You could water them. They will find it done when they get back.</div>'
+        +'<button class="primary" id="wat">Water '+dry+' rows for them</button></div>'):'')
     +'<h3 style="font-size:14px;margin:14px 0 6px;">Leave a note on the gate</h3>'
-    +'<input type="text" id="nb" maxlength="240" placeholder="Watered your beans. — you" style="width:100%;background:rgba(237,230,214,0.05);border:1px solid var(--line);color:var(--parchment);padding:9px 11px;border-radius:3px;font-size:14px;"/>'
-    +'<div class="acts" style="margin-bottom:12px;"><button class="primary" id="noteB">Pin it</button></div>'
-    +(notes?('<h3 style="font-size:14px;margin:6px 0;">On the gate</h3>'+notes):'<div class="hint">Nothing pinned yet.</div>')
-    +'<div class="acts"><button id="backB">Back to the valley</button><button class="primary" id="closeB">Go home</button></div>');
+    +'<input type="text" id="nb" maxlength="240" placeholder="Watered your beans. — '+esc(S.player.name||'a neighbour')+'" '
+    +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);padding:10px 12px;border-radius:4px;font-size:14px;"/>'
+    +'<div class="acts"><button class="primary" id="noteB">Pin it</button></div>'
+    +'<div class="acts"><button id="backB">Back</button><button class="primary" id="closeB">Go home</button></div>');
+  const w=document.getElementById('wat');
+  if(w)w.onclick=async()=>{
+    w.disabled=true;w.innerText='Watering…';
+    const n=await NET.water(id);
+    toast(n?('Watered '+n+' rows for '+g.handle):'Nothing needed doing');
+    S.standing+=n;save();openVisit(id);
+  };
   document.getElementById('noteB').onclick=async()=>{
     const t=document.getElementById('nb').value.trim();if(!t)return;
-    const ok=await NET.leaveNote(uid,t);
+    const ok=await NET.note(id,t);
     toast(ok?'Pinned to the gate.':'It would not stick.');
-    openVisit(uid);
+    openVisit(id);
   };
   document.getElementById('backB').onclick=openValley;
   document.getElementById('closeB').onclick=close;
@@ -1485,10 +1510,11 @@ function openMenu(){
     +'<p class="sub">Greenhollow saves itself on this device after everything you do. Close it and come back whenever.</p>'
     +'<div class="card"><strong>Standing</strong><div class="hint">'+standingWord()+'</div></div>'
     +'<div class="card"><strong>How this works</strong><div class="hint">Nothing in this valley is bought or sold. Seed is given, tools are mended, and what you grow beyond your own needs goes on the table or against the board. Standing is not a score — it is people remembering that you turned up.</div></div>'
-    +'<div class="card"><strong>The wider valley</strong><div class="hint">'
-    +(NET.ready()?('Signed in as '+esc(NET.profile?NET.profile.handle:'you')+'. The table and board are shared.'):'Playing on this device alone. You can share a valley with people you know.')
+    +'<div class="card"><strong>Friends</strong><div class="hint">'
+    +(NET.ready()?('Sharing the valley <strong>'+esc(NET.code)+'</strong> with '+(NET.others().length)+' other'+(NET.others().length===1?'':'s')+'.')
+                 :'Playing on your own. You can share a valley with friends — they just need a code.')
     +'</div></div>'
-    +'<div class="acts" style="margin-bottom:10px;"><button class="primary" id="valB">'+(NET.ready()?'The valley':'Play with friends')+'</button></div>'
+    +'<div class="acts" style="margin-bottom:10px;"><button class="primary" id="valB">'+(NET.ready()?'Your valley':'Play with friends')+'</button></div>'
     +'<div class="acts"><button id="resetB" style="border-color:var(--rose);color:var(--rose);">Start over</button>'
     +'<button class="primary" id="closeB">Back</button></div>');
   const vb=document.getElementById('valB');if(vb)vb.onclick=openValley;
