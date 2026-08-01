@@ -105,7 +105,7 @@
 </div>
 <script>
 /* ================= CONFIG ================= */
-const TILE=32, MW=120, MH=96, KEY='greenhollow-v2';
+const TILE=32, MW=120, MH=96, KEY='greenhollow-v3';
 const DAY_START=6*60, DAY_END=24*60, MIN_PER_SEC=1/0.55;
 const STAMINA=24;
 const storageShim={
@@ -131,8 +131,7 @@ const BLD={
 Object.keys(BLD).forEach(k=>{const b=BLD[k];b.id=k;b.door={x:b.x+Math.floor(b.w/2),y:b.y+b.h};});
 const WELL={x:58,y:44};
 const TABLE={x:63,y:44};                      /* the sharing table */
-const TREES=[[2,2],[10,1],[19,2],[24,2],[33,2],[42,3],[45,8],[2,22],[8,24],[14,26],[20,28],[30,29],[36,30],
-             [43,27],[45,18],[3,30],[11,32],[18,33],[26,34],[34,35],[41,33],[45,35],[22,7],[33,15],[43,14]];
+const TREES=[];   /* every tree in the valley is now a resource node you can fell */
 
 /* ================= CROPS ================= */
 const CROPS={
@@ -430,12 +429,22 @@ function buildNodes(){
   /* scattered once, deterministically, so the valley is the same valley every time */
   const out={};
   const put=(x,y,k)=>{ if(x>1&&y>1&&x<RIVER_X-1&&y<MH-2) out[x+','+y]={k,cut:0}; };
-  for(let i=0;i<420;i++){
-    const x=2+Math.floor(srand(hashStr('nx'+i))*(RIVER_X-4));
-    const y=2+Math.floor(srand(hashStr('ny'+i))*(MH-4));
+  /* seed clusters, then scatter round them: woods look like woods, rock like outcrops */
+  const clusters=[];
+  for(let c=0;c<110;c++){
+    clusters.push({x:2+Math.floor(srand(hashStr('cx'+c))*(RIVER_X-4)),
+                   y:2+Math.floor(srand(hashStr('cy'+c))*(MH-4))});
+  }
+  for(let i=0;i<1500;i++){
+    const c=clusters[i%clusters.length];
+    const spread=4;
+    const x=Math.round(c.x+(srand(hashStr('sx'+i))-0.5)*spread*2);
+    const y=Math.round(c.y+(srand(hashStr('sy'+i))-0.5)*spread*2);
+    if(x<2||y<2||x>=RIVER_X-1||y>=MH-2)continue;
+    if(out[x+','+y])continue;
     if(x>=FARM.x-1&&x<FARM.x+FARM.w+1&&y>=FARM.y-1&&y<FARM.y+FARM.h+1)continue;  /* keep your ground clear */
     if(Object.values(BLD).some(b=>x>=b.x-2&&x<b.x+b.w+2&&y>=b.y-2&&y<b.y+b.h+3))continue;
-    const r=srand(hashStr('nk'+i));
+    const r=srand(hashStr('nk'+i+'.'+x+'.'+y));
     let k;
     if(y<18)      k = r<0.62?'tree':(r<0.82?'stump':'bush');       /* woods to the north */
     else if(y>72) k = r<0.55?'rock':(r<0.78?'clay':'stump');        /* stony ground south  */
@@ -444,6 +453,18 @@ function buildNodes(){
     else          k = r<0.45?'tree':(r<0.7?'bush':(r<0.88?'reed':'rock'));
     put(x,y,k);
   }
+  /* a starter wood and some stone within sight of your own gate */
+  const near=[[FARM.x-3,FARM.y+2],[FARM.x-4,FARM.y+6],[FARM.x-3,FARM.y+11],[FARM.x-5,FARM.y+15],
+              [FARM.x+FARM.w+2,FARM.y+3],[FARM.x+FARM.w+3,FARM.y+8],[FARM.x+FARM.w+2,FARM.y+13],
+              [FARM.x+4,FARM.y-3],[FARM.x+9,FARM.y-4],[FARM.x+15,FARM.y-3],
+              [FARM.x+5,FARM.y+FARM.h+3],[FARM.x+12,FARM.y+FARM.h+2],[FARM.x+18,FARM.y+FARM.h+4]];
+  near.forEach((p,i)=>{
+    const k=['tree','tree','tree','stump','rock','rock','bush','reed','clay'][i%9];
+    for(let d=0;d<3;d++){
+      const x=p[0]+(d%2), y=p[1]+Math.floor(d/2);
+      if(x>1&&y>1&&x<RIVER_X-1&&y<MH-2&&!out[x+','+y])out[x+','+y]={k,cut:0};
+    }
+  });
   return out;
 }
 function nodeAt(x,y){const n=S.nodes&&S.nodes[x+','+y];return (n&&n.cut<=S.day)?n:null;}
@@ -883,9 +904,14 @@ function draw(){
       if(f.pal.critters)drawCritters(ctx,fx,fy,hashStr(f.id));
       ctx.fillStyle='rgba(237,230,214,0.9)';ctx.font='10px Inter';ctx.textAlign='center';
       ctx.fillText(f.name.split(' ')[0],fx+16,fy-8);
-      if(Math.hypot(fx-S.px,fy-S.py)<5*TILE){
-        ctx.font='9px Inter';ctx.fillStyle='rgba(237,230,214,0.5)';
-        ctx.fillText('· '+folkDoing(f)+' ·',fx+16,fy-20);
+      if(Math.hypot(fx-S.px,fy-S.py)<3.2*TILE){
+        const cap='· '+folkDoing(f)+' ·';
+        ctx.font='9px Inter';
+        const w=ctx.measureText(cap).width;
+        ctx.fillStyle='rgba(16,26,20,0.82)';
+        ctx.fillRect(fx+16-w/2-4,fy-28,w+8,13);
+        ctx.fillStyle='rgba(237,230,214,0.72)';
+        ctx.fillText(cap,fx+16,fy-19);
       }
     }});
   });
@@ -934,9 +960,21 @@ function folkDoing(f){
 function folkPos(f){
   const b=BLD[f.at];
   const h=S.min/60;
-  if(h>=8&&h<18)return {x:b.door.x,y:b.door.y+1};
-  if(h>=18&&h<21)return {x:TABLE.x+1+ (hashStr(f.id)%3), y:TABLE.y+2};
-  return {x:b.door.x,y:b.door.y+1};
+  /* everyone at a building gets their own spot outside it */
+  const mates=FOLK.filter(x=>x.at===f.at);
+  const i=mates.findIndex(x=>x.id===f.id);
+  const ring=[[0,1],[2,1],[-2,1],[1,2],[-1,2],[3,2],[-3,2],[0,3],[2,3],[-2,3],[4,1],[-4,1],
+              [4,2],[-4,2],[1,3],[-1,3],[3,3],[-3,3],[5,1],[-5,1],[0,4],[2,4],[-2,4],[4,3]];
+  if(h>=18&&h<21){
+    /* a long table: everyone gets their own place, however many turn up */
+    const all=FOLK.findIndex(x=>x.id===f.id);
+    const perSide=Math.ceil(FOLK.length/2);
+    const side=all<perSide?0:1;
+    const seat=side===0?all:(all-perSide);
+    return {x:TABLE.x-Math.floor(perSide/2)+seat, y:TABLE.y+(side===0?2:4)};
+  }
+  const r=ring[i%ring.length];
+  return {x:b.door.x+r[0],y:b.door.y+r[1]};
 }
 
 /* ================= INPUT ================= */
