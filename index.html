@@ -36,11 +36,18 @@
         border:1px solid var(--amber);color:var(--amber);font-size:13px;padding:6px 14px;border-radius:20px;
         pointer-events:none;display:none;z-index:4;max-width:88%;text-align:center;}
   #toolbar{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;display:flex;gap:6px;z-index:4;}
-  .slot{width:52px;height:52px;border:1px solid var(--line);border-radius:6px;background:rgba(16,26,20,0.85);
-        display:flex;align-items:center;justify-content:center;position:relative;}
-  .slot.sel{border-color:var(--amber);background:rgba(224,166,61,0.15);}
-  .slot canvas{width:36px;height:36px;}
-  .slot .n{position:absolute;bottom:1px;right:4px;font-size:10px;color:var(--dim);}
+  .slot{width:72px;height:78px;border:1.5px solid var(--line);border-radius:8px;background:rgba(16,26,20,0.92);
+        display:flex;flex-direction:column;align-items:center;justify-content:flex-start;position:relative;
+        padding-top:5px;transition:transform .08s,border-color .12s;}
+  .slot.sel{border-color:var(--amber);background:rgba(224,166,61,0.20);transform:translateY(-5px);
+        box-shadow:0 4px 14px rgba(0,0,0,0.45);}
+  .slot canvas{width:44px;height:44px;image-rendering:pixelated;}
+  .slot .lbl{font-size:10.5px;letter-spacing:.02em;margin-top:1px;color:var(--dim);white-space:nowrap;}
+  .slot.sel .lbl{color:var(--amber);font-weight:600;}
+  .slot .n{position:absolute;top:2px;right:5px;font-size:11px;font-weight:600;color:var(--parchment);
+        background:rgba(0,0,0,0.5);border-radius:8px;padding:0 5px;font-family:'IBM Plex Mono',monospace;}
+  .slot .key{position:absolute;top:2px;left:5px;font-size:9px;color:rgba(237,230,214,0.4);
+        font-family:'IBM Plex Mono',monospace;}
   #joy{position:absolute;left:18px;bottom:18px;width:108px;height:108px;border-radius:50%;
        border:1.5px solid rgba(237,230,214,0.25);background:rgba(24,38,25,0.4);display:none;z-index:4;}
   #stick{position:absolute;left:36px;top:36px;width:36px;height:36px;border-radius:50%;background:rgba(224,166,61,0.55);}
@@ -98,7 +105,7 @@
 </div>
 <script>
 /* ================= CONFIG ================= */
-const TILE=32, MW=52, MH=40, KEY='greenhollow-v1';
+const TILE=32, MW=120, MH=96, KEY='greenhollow-v2';
 const DAY_START=6*60, DAY_END=24*60, MIN_PER_SEC=1/0.55;
 const STAMINA=24;
 const storageShim={
@@ -108,20 +115,22 @@ const storageShim={
 const STORE=(typeof window!=='undefined'&&window.storage&&window.storage.get)?window.storage:storageShim;
 
 /* ================= WORLD ================= */
-const FARM={x:3,y:8,w:14,h:11};              /* your tillable land */
-const RIVER_X=47;
+const SUPPLY={x:56,y:34};
+const FARM={x:30,y:40,w:22,h:18};            /* your own ground, and it can be extended */
+const RIVER_X=104;
 const BLD={
-  home:{x:4,y:3,w:5,h:4,label:'Your cottage',wall:'#5E4A3A',roof:'#8C5A3C',kind:'home'},
-  barn:{x:12,y:3,w:5,h:4,label:'The old barn',wall:'#54503E',roof:'#6E6450',kind:'store'},
-  seedhouse:{x:26,y:5,w:6,h:4,label:'The Seed Library',wall:'#4A5E46',roof:'#5E7A56',kind:'shop',who:'maren'},
-  forge:{x:35,y:5,w:5,h:4,label:"Odell's Forge",wall:'#5A4A44',roof:'#8C5A4A',kind:'shop',who:'odell'},
-  kitchen:{x:26,y:22,w:7,h:4,label:'The Long Kitchen',wall:'#5E5440',roof:'#C4A44E',kind:'shop',who:'tobias'},
-  hives:{x:37,y:22,w:5,h:4,label:'Wren’s Hives',wall:'#5A5238',roof:'#C9A44E',kind:'shop',who:'wren'},
-  hall:{x:20,y:13,w:7,h:5,label:'The Commons Hall',wall:'#4E5460',roof:'#6E7A8C',kind:'shop',who:'hollis'},
+  home    :{x:26,y:34,w:5,h:3,label:'Your cottage',   wall:'#5E4A3A',roof:'#7A5A44',roof2:'#6A4E3A',bed:true},
+  barnold :{x:20,y:44,w:6,h:4,label:'The old barn',   wall:'#4E4638',roof:'#8C7A3C',roof2:'#7A6A32'},
+  seedhouse:{x:56,y:26,w:5,h:3,label:'The Seed Library',wall:'#4E5A46',roof:'#6FA85C',roof2:'#5E9450'},
+  kitchen :{x:64,y:30,w:6,h:3,label:'The Long Kitchen',wall:'#6B4A32',roof:'#E0A63D',roof2:'#C9944E'},
+  supply  :{x:54,y:34,w:5,h:3,label:'The Supply House',wall:'#57504A',roof:'#8C6A9C',roof2:'#7A5C88'},
+  forge   :{x:64,y:40,w:5,h:3,label:'Sana & Andrew\'s',wall:'#5A5248',roof:'#8C5A4A',roof2:'#7A4E40'},
+  hives   :{x:74,y:24,w:5,h:3,label:'The Hives',      wall:'#5E5A44',roof:'#C9A44E',roof2:'#B08F3C'},
+  hall    :{x:60,y:48,w:7,h:4,label:'The Commons Hall',wall:'#4E4638',roof:'#5B7A8C',roof2:'#4E6A7A'},
 };
 Object.keys(BLD).forEach(k=>{const b=BLD[k];b.id=k;b.door={x:b.x+Math.floor(b.w/2),y:b.y+b.h};});
-const WELL={x:19,y:9};
-const TABLE={x:23,y:20};                      /* the sharing table */
+const WELL={x:58,y:44};
+const TABLE={x:63,y:44};                      /* the sharing table */
 const TREES=[[2,2],[10,1],[19,2],[24,2],[33,2],[42,3],[45,8],[2,22],[8,24],[14,26],[20,28],[30,29],[36,30],
              [43,27],[45,18],[3,30],[11,32],[18,33],[26,34],[34,35],[41,33],[45,35],[22,7],[33,15],[43,14]];
 
@@ -137,48 +146,154 @@ const SEED_OF={};Object.keys(CROPS).forEach(k=>SEED_OF[CROPS[k].seed]=k);
 
 /* ================= VILLAGERS ================= */
 const FOLK=[
- {id:'maren',name:'Maren Ashfield',role:'Keeps the Seed Library',pal:{skin:'#E5BC96',hair:'#5A3A24',longHair:true,shirt:'#5E7A56',pants:'#3E4A38'},
+ {id:'jess',name:'Jessica Fairchild',role:'Runs the pasta kitchen',
+  pal:{skin:'#E5BC96',hair:'#5A3A24',longHair:true,shirt:'#7A9455',pants:'#4A4438',hat:'witch',hatColour:'#2E5A3C'},
   at:'seedhouse',
-  intro:"Maren. I keep the seed library — everything in there was grown by somebody here and given back. Take what you'll plant.",
-  lines:{work:["Sorting seed. Half of it came back from folk who grew more than they needed.","Good year for the brassicas, if the frost holds off."],
-         village:["Nobody here buys anything. It confuses visitors for about a week and then it doesn't.","Hollis keeps the board. If you want to know what's needed, that's where it's written."],
-         you:["You've taken over the old plot. It's good ground, it's just been lonely.","Plant something. Anything. The rest sorts itself out."]},
-  likes:['Turnip','Carrot','Wheat']},
- {id:'odell',name:'Odell Frey',role:'Toolwright',pal:{skin:'#8A5A3C',hair:'#1E1A16',shirt:'#8C5A4A',pants:'#33302E',beard:true},
-  at:'forge',
-  intro:"Odell. I make and mend the tools. You break it, I'll fix it, and you'll bring me something when you can.",
-  lines:{work:["Rehandling a scythe. Third time for this one — it refuses to die.","Quiet at the forge. That's usually a good sign for everyone else."],
-         village:["Everything I make goes out into the valley and comes back as bread eventually.","Wren's honey is worth more to me than anything you could hand me for the work."],
-         you:["Your hoe's soft iron. Bring me a decent haul one day and I'll draw you a better one.","Work the land first. Tools follow need, not the other way round."]},
-  likes:['Wheat','Pumpkin']},
- {id:'wren',name:'Wren Calder',role:'Keeps the hives',pal:{skin:'#EDC79B',hair:'#C9A44E',pony:true,shirt:'#C9A44E',pants:'#44503E'},
-  at:'hives',
-  intro:"Wren. Nine hives and an orchard that's mostly opinions. If you hear humming out here, that's mine.",
-  lines:{work:["The bees are calm today. You can hear it before you open anything.","Splitting a hive this week. Nervous business."],
-         village:["Give the bees a flowering crop nearby and I'll give you honey until you're sick of it.","Tobias turns whatever's spare into supper. Best system anyone's come up with."],
-         you:["Plant something that flowers and my girls will do half your work for you.","New hands on that plot. About time."]},
-  likes:['Pumpkin','Tomato']},
- {id:'tobias',name:'Tobias Nye',role:'Cooks at the Long Kitchen',pal:{skin:'#D9A47C',hair:'#3A2A1A',shirt:'#C4A44E',pants:'#3E3A32',stubble:true},
+  job:['rolling dough','counting the wheat back in','writing the week out on the wall','arguing gently with the grinder'],
+  intro:"Jessica. Justin does the pasta, I do everything that involves remembering. Bring wheat, leave with supper.",
+  lines:{work:["Semolina everywhere. It gets in the seams of everything I own.","Grain in, pasta out. Best arrangement in the valley and no arrangement at all."],
+         village:["Nobody buys anything here. It took me about a week to stop reaching for a purse.","The board's Wen's doing. If you're short of something, write it up."],
+         you:["You've taken the old plot. Good ground, that. It's only been lonely.","Grow more than you need. That's the whole trick of it."]},
+  likes:['Wheat','Carrot','Pumpkin']},
+ {id:'justin',name:'Justin Fairchild',role:'Bakes and keeps the free shelf',
+  pal:{skin:'#E2B187',hair:'#7A4A2E',beard:true,shirt:'#3E5A46',pants:'#4A3A2E',kilt:{base:'#2E5A3C',stripe:'#C4A44E'},hat:'beret',hatColour:'#2E5A3C'},
   at:'kitchen',
-  intro:"Tobias. I run the Long Kitchen — whatever comes in off the table gets cooked and whoever's hungry eats. That's the whole of it.",
-  lines:{work:["Soup, mostly. Soup is what happens when everyone gives you a little of everything.","Short on anything orange this week, if you're planting."],
-         village:["Leave surplus on the table by the hall. It never sits there long.","Nobody in this valley eats alone unless they want to."],
-         you:["You'll be hungry by day three. Come down, there's always a pot on.","Bring me one good tomato and I'll make you regret every tomato you've had before."]},
-  likes:['Tomato','Carrot','Turnip']},
- {id:'hollis',name:'Hollis Vane',role:'Keeps the Commons Hall',pal:{skin:'#E8C49B',hair:'#C8C4BC',shirt:'#6E7A8C',pants:'#3A3A42',elder:true,glasses:true},
-  at:'hall',
-  intro:"Hollis Vane. I keep the hall and the board on it. Anything this valley needs gets written up there, and somebody sees to it.",
-  lines:{work:["Writing up what's wanted. It's mostly small things. Small things are the whole of it.","Somebody always sees to the board. I've stopped being surprised by it."],
-         village:["We had coin here once. It made us worse at this, so we stopped.","Millbrook's downstream. They had a bad spring — I'd not go asking about it."],
-         you:["Take what you need from the library and give back when you've got it. That's the arrangement.","Standing isn't a score. It's just people remembering you turned up."]},
+  job:['pulling loaves out','feeding the starter','stacking the free shelf','leaning on the door talking to somebody'],
+  intro:"Justin. I bake. There's a shelf by the door and whatever's on it is free — that's not charity, that's just how bread works.",
+  lines:{work:["Sourdough's in at six. You can set a clock by it, and people do.","Wheat comes in off the table, bread goes back on it. I've never once counted."],
+         village:["One each, neighbour. That's how it stays free.","Everyone's short of something. Being short of it alone is the only real problem."],
+         you:["Take a loaf on your way past. Go on.","New ground's hard the first season. It gets easier and then you get fond of it."]},
   likes:['Wheat','Turnip']},
- {id:'isla',name:'Isla Frey',role:"Odell's daughter, 9",pal:{skin:'#B07B52',hair:'#241C18',pony:true,shirt:'#4E8B8B',pants:'#3A3A42',freckles:true},
+ {id:'sana',name:'Sana Okafor',role:'Mends everything',
+  pal:{skin:'#8A5A3C',hair:'#1E1A16',pony:true,shirt:'#C4A44E',pants:'#3A3A42'},
+  at:'forge',
+  job:['under something with a spanner','sharpening blades on the wheel','swearing at a hinge','showing Teddy the same thing again'],
+  intro:"Sana. If it's broken, bring it. If it's broken because you did something daft, bring it anyway and don't tell me which.",
+  lines:{work:["Third hoe this month. Same hoe, mind. Somebody keeps burying it.","Steel's fine. It's the handles that give out."],
+         village:["Nobody pays me. They bring me lunch and I've never gone hungry.","Tools aren't yours, exactly. They're just with you for a while."],
+         you:["Your can's leaking. Don't argue, I can hear it.","Bring me the blunt one before you wreck your wrists."]},
+  likes:['Stone','Wood','Carrot']},
+ {id:'kayla',name:'Kayla Aube',role:'Pies and preserves',
+  pal:{skin:'#E8C49B',hair:'#3A6EA5',longHair:true,shirt:'#3A2A4A',pants:'#2E2438',hat:'witch'},
+  at:'kitchen',
+  job:['crimping a crust','labelling jars','arguing with the oven','asleep in the chair by the warm wall'],
+  intro:"Kayla. I make the pies. Yes, the hat's mine, no there's no occasion, I've dressed like this for years.",
+  lines:{work:["Pastry's resting. I am not.","Eighteen years of crimping and not one edge matches. That's how you know it's mine."],
+         village:["Fruit turns up on my step and pies turn up on other people's. Nobody keeps books.","Conrad does the sums. There aren't any sums, but he does them."]},
+  likes:['Pumpkin','Tomato','Wheat']},
+ {id:'patrick',name:'Patrick Pike',role:'Keeps the woods and the birds',
+  pal:{skin:'#6B4A32',hair:'#1A1410',beard:true,glasses:true,shirt:'#4A4438',pants:'#33302A'},
+  at:'hives',
+  job:['scattering feed on the flat stone','writing something down','walking the treeline','sat with the crows and not talking'],
+  intro:"…Patrick. I'm out past the trees, mostly. Most folk don't come that far. You're welcome to, mind.",
+  lines:{work:["Feeding the crows. They know me. That's my morning and it's enough.","Walking, and writing down what I see. It isn't work, but it fills a day."],
+         village:["This place lets a man be quiet without deciding what it means. That's rarer than it sounds.","Justin comes out with bread. He doesn't fill the silences. I've noticed."],
+         you:["You've not asked me anything daft yet. That's a good start.","If the crows come down for you, that's them deciding, not me."]},
+  likes:['Wheat','Berries']},
+ {id:'andrew',name:'Andrew Minnear',role:'Builds impossible things',
+  pal:{skin:'#EDC79B',hair:'#5A3A24',bald:true,beard:true,beardColour:'#5A3A24',glasses:true,shirt:'#4E7A5C',pants:'#4A4438'},
+  at:'forge',
+  job:['wiring a jaw shut','painting something enormous','testing a servo, badly','explaining hydraulics to a goat'],
+  intro:"Andrew! I build animatronic dinosaurs, which is a real job. There's a raptor in the shed. Come and look at it, honestly.",
+  lines:{work:["Neck servo keeps stalling mid-sweep. It'll be glorious and it'll be late.","Resin, solder, and enamel paint. I have a headache by four and I don't mind."],
+         village:["Nobody's ever asked me what a dinosaur is *for*. I love it here.","Bring me scrap. Any scrap. I'll give you something ridiculous back."]},
+  likes:['Wood','Stone']},
+ {id:'zak',name:'Zak Lyons',role:'Teaches whoever turns up',
+  pal:{skin:'#E8C49B',hair:'#A8834E',goatee:true,shirt:'#8C6A9C',pants:'#3E3A32'},
+  at:'hall',
+  job:['reading aloud to four children and a goat','patching the roof','marking, badly','losing an argument about rules'],
+  intro:"Zak. I teach — one room, whoever turns up, and a bucket under the leak. Heather's my wife; she's up the bluffs hitting rocks.",
+  lines:{work:["Chalk and wet coats. And whatever's in the bucket by Thursday.","They learn more from Sana's forge than from me. I've made my peace with it."],
+         village:["Children here grow up thinking food comes from neighbours. Which it does.","Wen writes the board. I read it aloud, which apparently counts as helping."]},
+  likes:['Carrot','Berries']},
+ {id:'jason',name:'Jason Knapp',role:'Walks the valley at night',
+  pal:{skin:'#D9A47C',hair:'#3A2A1A',beard:true,glasses:true,shirt:'#3E4A5C',pants:'#2E3238'},
+  at:'hall',
+  job:['asleep, by rights','checking the far gates','mending fence wire','sat with a thermos watching the road'],
+  intro:"Jason. I walk the valley at night — gates, the river path, the barns. Rachel's at the clinic. Kat's ours.",
+  lines:{work:["Nights. Quiet, mostly. Quiet is the job going well.","Everything smells different at three. You'd be surprised."],
+         village:["Nothing's locked here. Took me a year to stop checking.","If something's wrong at two in the morning, I'll have seen it."]},
+  likes:['Wheat','Carrot']},
+ {id:'rachel',name:'Rachel Knapp',role:'Keeps the clinic',
+  pal:{skin:'#E5BC96',hair:'#3E2A1E',longHair:true,shirt:'#7FA8A8',pants:'#3A3A42'},
+  at:'hall',
+  job:['stitching somebody up','sorting the medicine shelf','writing up notes','drinking cold tea'],
+  intro:"Rachel. I keep the clinic. I'll have patched up most of this valley before you've learned their names.",
+  lines:{work:["Stitches, fevers, blood pressure. And whatever Andrew's done to his hands this week.","Supplies come off the table like everything else. It works, which still surprises me."],
+         village:["Nobody's ever handed me money for looking after them. I'd not know what to do with it.","Jason's on nights, so we pass in the doorway. That's marriage in a farming valley."]},
+  likes:['Berries','Carrot']},
+ {id:'heather',name:'Heather Lyons',role:'Reads the ground',
+  pal:{skin:'#D9A87E',hair:'#3E2A1E',longHair:true,shirt:'#B87A4A',pants:'#44503E'},
+  at:'hives',
+  job:['hammering at the bluff','writing the survey out','carrying rocks nobody asked for','arguing with the riverbank'],
+  intro:"Heather. Geologist. I read the bluffs and the river, and I tell people what the ground is about to do.",
+  lines:{work:["East bank's slumping. I have the cores. Somebody will listen eventually.","Wet clay smells of pennies. That's not poetry, that's just iron."],
+         village:["Zak teaches, I dig. Between us the children know more than we do.","I told them where to put the well and they actually listened. Best day of my life."]},
+  likes:['Stone','Wheat']},
+ {id:'conrad',name:'Conrad Aube',role:'Ovens and the counter',
+  pal:{skin:'#D9A47C',hair:'#5A3A24',beard:true,shirt:'#5B7A8C',pants:'#3E3A32'},
+  at:'kitchen',
+  job:['minding the ovens','carrying trays through','doing sums that do not need doing','talking to whoever came in'],
+  intro:"Conrad. Kayla makes them, I bake them and hand them out. Eighteen years of it and I'd not change a day.",
+  lines:{work:["Hot tin and yeast. I could find this kitchen blindfolded.","Ovens are honest. They do exactly what you deserve."],
+         village:["I still do the sums at night out of habit. There's nothing to add up. It's restful, actually."]},
+  likes:['Wheat','Pumpkin']},
+ {id:'aiden',name:'Aiden Fairchild',role:'Justin & Jessica\'s eldest, 13',
+  pal:{skin:'#E2B187',hair:'#D4B25E',freckles:true,shirt:'#4E8B8B',pants:'#3A3A42'},
+  at:'kitchen',child:true,
+  job:['hauling sacks and complaining','off on the bike','pretending to help','down at the river'],
+  intro:"Aiden. The bakery's my parents'. I'm the oldest, which mostly means carrying things.",
+  lines:{work:["Sacks. Always sacks. Dad says it builds character.","I'm fixing my bike. It's not broken. It's being improved."],
+         village:["Everyone knows everyone. It's boring and it's also fine.","You can go anywhere here. That's the good bit."]},
+  likes:['Berries','Pumpkin']},
+ {id:'lillyan',name:'Lillyan Fairchild',role:'Justin & Jessica\'s daughter, 10',
+  pal:{skin:'#E8C49B',hair:'#D4B25E',longHair:true,paint:true,freckles:true,shirt:'#C4497B',pants:'#4A4438'},
   at:'hall',child:true,
-  intro:"Isla! My dad's the one making all the noise. I'm not allowed in the forge but I go in anyway.",
-  lines:{work:["I'm collecting frogs. There's four in the river and I've named them all.","Helping. Sort of helping. Hollis says I'm helping."],
-         village:["Everyone knows everyone. It's boring but it's also quite nice.","There's a chalk cat on the hall wall. I didn't do it. A girl downstream did, ages ago."],
-         you:["Is that your farm? It's all weeds. No offence.","Can I have a pumpkin when you grow one? I want the biggest."]},
-  likes:['Pumpkin','Tomato']},
+  job:['chalking something on a wall','painting her own arms','organising the smaller ones','asking Zak difficult questions'],
+  intro:"Lillyan! I'm ten. I paint — on paper, on the road, mostly on me. Have you found Mister Fig yet?",
+  lines:{work:["This one's a fern. That one went wrong so now it's a fish.","Mister Fig's my cat. I made him up. He's on a lot of walls."],
+         village:["I'm doing all the gates. Every gate gets a cat eventually.","Nobody minds. Sana said it improves the forge."]},
+  likes:['Berries','Tomato']},
+ {id:'luna',name:'Luna Fairchild',role:'Justin & Jessica\'s daughter, 7',
+  pal:{skin:'#E8C49B',hair:'#C4497B',longHair:true,critters:true,shirt:'#B0688C',pants:'#44503E'},
+  at:'hives',child:true,
+  job:['followed by three animals','talking to a sparrow','drawing the dog wrong','sat very still so the rabbit stays'],
+  intro:"Luna. I'm seven. The animals come to me. I don't call them, they just come.",
+  lines:{work:["The sparrows sit on my hand. Only for good ones, though.","I'm drawing Barley. His legs come out wrong because he won't sit still."],
+         village:["The goats like Bram best. Then me. Then nobody.","Animals know things. Grown-ups say that's silly."]},
+  likes:['Carrot','Berries']},
+ {id:'elliot',name:'Elliot Fairchild',role:'Justin & Jessica\'s youngest, 4',
+  pal:{skin:'#E2B187',hair:'#D4B25E',shirt:'#E0A63D',pants:'#4A4438'},
+  at:'kitchen',child:true,
+  job:['digging a hole','carrying one single carrot with great seriousness','under a table','shouting about a dinosaur'],
+  intro:"I'm Elliot. I'm FOUR.",
+  lines:{work:["There's a HOLE. It's mine.","I'm helping. I've got a carrot."],
+         village:["Andrew has a DINOSAUR.","I'm allowed everywhere."]},
+  likes:['Pumpkin','Carrot']},
+ {id:'kat',name:'Kat Knapp',role:'Jason & Rachel\'s daughter, 11',
+  pal:{skin:'#E5BC96',hair:'#3A2A1A',pony:true,shirt:'#7FA8A8',pants:'#3A3A42'},
+  at:'hives',child:true,
+  job:['in the river again','racing somebody to the bridge','asking Rachel gruesome questions','drying off, reluctantly'],
+  intro:"Kat Knapp. Mum's the nurse, Dad walks about at night. I swim — I'm fast, whatever Mum says.",
+  lines:{work:["The deep bit past the willow. Don't tell Mum.","Mum lets me watch the stitches. It's brilliant."],
+         village:["Dad's awake when everyone's asleep, so I stay up too. Sometimes."]},
+  likes:['Berries','Turnip']},
+ {id:'quinn',name:'Quinn Lyons',role:'Zak & Heather\'s eldest, 12',
+  pal:{skin:'#E8C49B',hair:'#D4B25E',longHair:true,shirt:'#B87A4A',pants:'#33303E'},
+  at:'hall',child:true,
+  job:['sorting rocks she has outgrown','reading on the wall','avoiding her father at school','labelling things'],
+  intro:"Quinn. My dad teaches and my mum hits rocks with a hammer. It's as embarrassing as it sounds.",
+  lines:{work:["It's not a rock collection. It's a reference set. There's a difference.","Reading. Somewhere Dad isn't."],
+         village:["Being taught by your own father should be illegal.","Mum's survey is actually right, for the record."]},
+  likes:['Stone','Carrot']},
+ {id:'angus',name:'Angus Lyons',role:'Zak & Heather\'s youngest, 6',
+  pal:{skin:'#E8C49B',hair:'#CC8F4E',freckles:true,shirt:'#4E8B5A',pants:'#44503E'},
+  at:'forge',child:true,
+  job:['watching Andrew work, too closely','wellies on the wrong feet','being a dinosaur','telling somebody a secret'],
+  intro:"ANGUS. My dad's the teacher. Do you like dinosaurs? Andrew has a REAL one. Nearly real.",
+  lines:{work:["I'm watching the raptor. Andrew says I can hold the screwdriver.","My wellies are on wrong. I know. It's fine."],
+         village:["Everybody lets me in everywhere. Quinn says that's because I'm small."]},
+  likes:['Pumpkin','Berries']},
 ];
 
 /* ================= STATE ================= */
@@ -190,9 +305,10 @@ function newGame(){
   const folk={};FOLK.forEach(f=>{folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
   return {day:1,min:DAY_START,stam:STAMINA,runId:Date.now(),
     player:{name:'',skin:'#E8C49B',hair:'#6B4226',hairStyle:'short',top:'#4E8B8B'},
-    farm:{},bag:[{item:'Turnip seeds',n:6},{item:'Carrot seeds',n:4}],
+    farm:{},bag:[{item:'Turnip seeds',n:6},{item:'Carrot seeds',n:4},{item:'Wood',n:8},{item:'Stone',n:4},{item:'Fibre',n:4}],
+    nodes:null,built:[],placing:null,
     tool:0,cans:0,folk,standing:0,needs:[],needsDay:0,shared:[],
-    px:9*TILE,py:9*TILE,scene:'world',started:false};
+    px:30*TILE,py:38*TILE,scene:'world',started:false};
 }
 async function save(){try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}
   if(NET.ready()&&Date.now()-(save._t||0)>15000){save._t=Date.now();NET.pushFarm();}}
@@ -200,6 +316,7 @@ async function load(){
   try{const r=await STORE.get(KEY);
     if(r&&r.value){S=JSON.parse(r.value);
       S.farm=S.farm||{};S.bag=S.bag||[];S.folk=S.folk||{};S.needs=S.needs||[];S.shared=S.shared||[];
+      S.built=S.built||[];if(!S.nodes)S.nodes=buildNodes();
       FOLK.forEach(f=>{if(!S.folk[f.id])S.folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
       return;}}catch(e){}
   S=newGame();await save();
@@ -299,6 +416,38 @@ function neighbourDoing(peer){
               'walking the boundary','asleep under a tree, allegedly working'];
   return jobs[seed%jobs.length]+(away>20?' — has not been seen in a while':'');
 }
+
+/* ================= WILD RESOURCES ================= */
+const NODEKIND={
+  tree :{item:'Wood',   n:3, stam:2, regrow:4, tool:'axe',  label:'Fell the tree'},
+  stump:{item:'Wood',   n:1, stam:1, regrow:3, tool:'axe',  label:'Split the stump'},
+  rock :{item:'Stone',  n:3, stam:2, regrow:5, tool:'pick', label:'Break the rock'},
+  clay :{item:'Clay',   n:2, stam:1, regrow:3, tool:'pick', label:'Dig the clay'},
+  reed :{item:'Fibre',  n:2, stam:1, regrow:2, tool:'hand', label:'Cut the reeds'},
+  bush :{item:'Berries',n:2, stam:1, regrow:2, tool:'hand', label:'Pick the berries'},
+};
+function buildNodes(){
+  /* scattered once, deterministically, so the valley is the same valley every time */
+  const out={};
+  const put=(x,y,k)=>{ if(x>1&&y>1&&x<RIVER_X-1&&y<MH-2) out[x+','+y]={k,cut:0}; };
+  for(let i=0;i<420;i++){
+    const x=2+Math.floor(srand(hashStr('nx'+i))*(RIVER_X-4));
+    const y=2+Math.floor(srand(hashStr('ny'+i))*(MH-4));
+    if(x>=FARM.x-1&&x<FARM.x+FARM.w+1&&y>=FARM.y-1&&y<FARM.y+FARM.h+1)continue;  /* keep your ground clear */
+    if(Object.values(BLD).some(b=>x>=b.x-2&&x<b.x+b.w+2&&y>=b.y-2&&y<b.y+b.h+3))continue;
+    const r=srand(hashStr('nk'+i));
+    let k;
+    if(y<18)      k = r<0.62?'tree':(r<0.82?'stump':'bush');       /* woods to the north */
+    else if(y>72) k = r<0.55?'rock':(r<0.78?'clay':'stump');        /* stony ground south  */
+    else if(x>86) k = r<0.5 ?'reed':(r<0.75?'clay':'bush');         /* wet ground by the river */
+    else if(x<20) k = r<0.5 ?'rock':(r<0.75?'tree':'stump');        /* the west ridge */
+    else          k = r<0.45?'tree':(r<0.7?'bush':(r<0.88?'reed':'rock'));
+    put(x,y,k);
+  }
+  return out;
+}
+function nodeAt(x,y){const n=S.nodes&&S.nodes[x+','+y];return (n&&n.cut<=S.day)?n:null;}
+function anyNodeAt(x,y){return S.nodes&&S.nodes[x+','+y];}
 /* ================= BAG ================= */
 function bagCount(item){const s=S.bag.find(x=>x.item===item);return s?s.n:0;}
 function bagAdd(item,n){
@@ -329,6 +478,8 @@ function ripe(p){
 /* ================= TOOLS ================= */
 const TOOLS=[
  {id:'hoe',name:'Hoe',verb:'Till'},
+ {id:'axe',name:'Axe',verb:'Fell'},
+ {id:'pick',name:'Pick',verb:'Break'},
  {id:'can',name:'Watering can',verb:'Water'},
  {id:'seed',name:'Seeds',verb:'Plant'},
  {id:'hand',name:'Hands',verb:'Gather'},
@@ -346,6 +497,13 @@ function buildCollision(){
   blocked.clear();
   const blk=(x,y)=>blocked.add(key(x,y));
   for(let y=0;y<MH;y++)for(let x=RIVER_X;x<MW;x++)blk(x,y);
+  if(S&&S.nodes)Object.keys(S.nodes).forEach(k=>{
+    const nd=S.nodes[k];
+    if(nd.cut>S.day)return;
+    if(nd.k==='reed'||nd.k==='clay')return;   /* you can walk through these */
+    const [x,y]=k.split(',').map(Number);blk(x,y);
+  });
+  if(S&&S.built)S.built.forEach(b=>{for(let y=b.y;y<b.y+b.h;y++)for(let x=b.x;x<b.x+b.w;x++)blk(x,y);});
   Object.values(BLD).forEach(b=>{for(let y=b.y;y<b.y+b.h;y++)for(let x=b.x;x<b.x+b.w;x++)blk(x,y);});
   TREES.forEach(([x,y])=>blk(x,y));
   blk(WELL.x,WELL.y);blk(TABLE.x,TABLE.y);
@@ -372,28 +530,86 @@ function shade(hex,a){const n=parseInt(hex.slice(1),16);let r=(n>>16)&255,g=(n>>
   return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);}
 
 /* ---- person sprite (shared with Millbrook's approach) ---- */
+function shadeC(hex,amt){
+  const n=parseInt(String(hex).slice(1),16);
+  let r=(n>>16)&255,g2=(n>>8)&255,b=n&255;
+  r=Math.max(0,Math.min(255,Math.round(r*amt)));
+  g2=Math.max(0,Math.min(255,Math.round(g2*amt)));
+  b=Math.max(0,Math.min(255,Math.round(b*amt)));
+  return '#'+((1<<24)+(r<<16)+(g2<<8)+b).toString(16).slice(1);
+}
 function drawPerson(g,x,y,pal,step,face){
   const s=2;
   const walk=Math.abs(Math.sin(step))>0.25;
   const la=walk?(Math.sin(step)>0?2:0):1, lb=walk?(Math.sin(step)>0?0:2):1;
   g.fillStyle='rgba(0,0,0,0.35)';g.beginPath();g.ellipse(x+8*s,y+22*s,7*s,2.5*s,0,0,7);g.fill();
-  g.fillStyle=pal.pants||'#3A3A42';
-  g.fillRect(x+4*s,y+(15+la)*s,3*s,5*s);g.fillRect(x+9*s,y+(15+lb)*s,3*s,5*s);
-  g.fillStyle='#241C14';g.fillRect(x+4*s,y+(19+la)*s,3*s,2*s);g.fillRect(x+9*s,y+(19+lb)*s,3*s,2*s);
-  g.fillStyle=pal.shirt;g.fillRect(x+3*s,y+9*s,10*s,7*s);
+  if(pal.kilt){
+    g.fillStyle=pal.skin;g.fillRect(x+4*s,y+17*s,3*s,3*s);g.fillRect(x+9*s,y+17*s,3*s,3*s);
+    g.fillStyle='#EDE6D6';g.fillRect(x+4*s,y+18.4*s,3*s,1.2*s);g.fillRect(x+9*s,y+18.4*s,3*s,1.2*s);
+    g.fillStyle='#241C14';g.fillRect(x+4*s,y+(19+la)*s,3*s,2*s);g.fillRect(x+9*s,y+(19+lb)*s,3*s,2*s);
+    g.fillStyle=pal.kilt.base;g.fillRect(x+3*s,y+13.5*s,10*s,4.5*s);
+    g.fillStyle='rgba(0,0,0,0.25)';g.fillRect(x+3*s,y+15.4*s,10*s,0.9*s);
+    g.fillStyle=pal.kilt.stripe;g.fillRect(x+5.2*s,y+13.5*s,0.9*s,4.5*s);g.fillRect(x+9.2*s,y+13.5*s,0.9*s,4.5*s);
+  }else{
+    g.fillStyle=pal.pants||'#3A3A42';
+    g.fillRect(x+4*s,y+(15+la)*s,3*s,5*s);g.fillRect(x+9*s,y+(15+lb)*s,3*s,5*s);
+    g.fillStyle='#241C14';g.fillRect(x+4*s,y+(19+la)*s,3*s,2*s);g.fillRect(x+9*s,y+(19+lb)*s,3*s,2*s);
+  }
+  g.fillStyle=pal.shirt;g.fillRect(x+3*s,y+9*s,10*s,(pal.kilt?4.8:7)*s);
   g.fillStyle='rgba(0,0,0,0.18)';g.fillRect(x+3*s,y+14*s,10*s,2*s);
   g.fillStyle=pal.shirt;g.fillRect(x+1*s,y+10*s,2*s,5*s);g.fillRect(x+13*s,y+10*s,2*s,5*s);
   g.fillStyle=pal.skin;g.fillRect(x+1*s,y+14*s,2*s,2*s);g.fillRect(x+13*s,y+14*s,2*s,2*s);
+  if(pal.paint){
+    g.fillStyle='#8C3A2E';g.fillRect(x+1*s,y+12*s,2*s,1*s);g.fillRect(x+13*s,y+13*s,2*s,1*s);
+    g.fillStyle='#4E8B8B';g.fillRect(x+1*s,y+14.6*s,2*s,0.8*s);
+    g.fillStyle='#C4A44E';g.fillRect(x+13*s,y+11.4*s,2*s,0.8*s);
+  }
   g.fillStyle=pal.skin;g.fillRect(x+4*s,y+2*s,8*s,7*s);
+  if(pal.bald){
+    g.fillStyle='rgba(255,255,255,0.10)';g.fillRect(x+5*s,y+2*s,6*s,2*s);
+    g.fillStyle=pal.hair;g.fillRect(x+3*s,y+5*s,1.6*s,2*s);g.fillRect(x+11.4*s,y+5*s,1.6*s,2*s);
+  }else{
   g.fillStyle=pal.hair;g.fillRect(x+3*s,y+1*s,10*s,3*s);
   if(pal.longHair){g.fillRect(x+3*s,y+3*s,2*s,8*s);g.fillRect(x+11*s,y+3*s,2*s,8*s);}
   else if(pal.pony){g.fillRect(x+3*s,y+3*s,2*s,3*s);g.fillRect(x+11*s,y+3*s,2*s,3*s);g.fillRect(x+12.6*s,y+4*s,1.8*s,7*s);}
   else{g.fillRect(x+3*s,y+3*s,2*s,3*s);g.fillRect(x+11*s,y+3*s,2*s,3*s);}
+  }
   if(face!==0){g.fillStyle='#1A1410';
     if(face===1){g.fillRect(x+6*s,y+5*s,3,4);g.fillRect(x+9*s,y+5*s,3,4);}
     else if(face===2)g.fillRect(x+9*s,y+5*s,3,4);
     else g.fillRect(x+6*s,y+5*s,3,4);}
-  if(pal.beard){g.fillStyle=pal.hair;g.fillRect(x+4*s,y+7*s,8*s,2.6*s);}
+  if(pal.beard){g.fillStyle=pal.beardColour||pal.hair;g.fillRect(x+4*s,y+7*s,8*s,2.6*s);}
+  else if(pal.goatee){g.fillStyle=pal.beardColour||pal.hair;g.fillRect(x+6.6*s,y+7*s,2.8*s,2.6*s);}
+  if(pal.glasses){
+    g.fillStyle='#2A2A30';
+    g.fillRect(x+5*s,y+4.6*s,2.6*s,2.2*s);g.fillRect(x+8.4*s,y+4.6*s,2.6*s,2.2*s);
+    g.fillRect(x+7.6*s,y+5.3*s,0.8*s,0.6*s);
+    g.fillStyle='rgba(200,220,235,0.30)';
+    g.fillRect(x+5.4*s,y+5*s,1.8*s,1.4*s);g.fillRect(x+8.8*s,y+5*s,1.8*s,1.4*s);
+  }
+  const HC=pal.hatColour;
+  if(pal.hat==='witch'){
+    const hb=HC||'#14101A';
+    g.fillStyle=hb;g.fillRect(x+1.5*s,y+0.4*s,13*s,1.8*s);
+    g.beginPath();g.moveTo(x+4.2*s,y+0.8*s);g.lineTo(x+11.8*s,y+0.8*s);g.lineTo(x+9*s,y-5.2*s);g.closePath();g.fill();
+    g.fillStyle=HC?shadeC(HC,1.55):'#6A4A9A';g.fillRect(x+4.2*s,y-0.8*s,7.6*s,1.3*s);
+  }else if(pal.hat==='beret'){
+    const bb=HC||'#7A2530';
+    g.fillStyle=bb;g.fillRect(x+3.2*s,y+1.1*s,9.6*s,1.9*s);g.fillRect(x+4*s,y+0.3*s,8.4*s,1.2*s);
+    g.fillStyle=shadeC(bb,0.75);g.fillRect(x+11.4*s,y-0.3*s,1.4*s,1.2*s);
+  }
+}
+function drawCritters(g,x,y,seed){
+  const t=Date.now()/700;
+  const bx=x-9+Math.sin(t+seed)*2, by=y+18;
+  g.fillStyle='#6B5238';g.fillRect(bx,by,7,4);g.fillRect(bx+6,by-3,4,4);
+  g.fillStyle='#C9A44E';g.fillRect(bx+9,by-2,2,1);
+  const rx=x+30, ry=y+16+Math.abs(Math.sin(t*1.3+seed))*2;
+  g.fillStyle='#9C9086';g.fillRect(rx,ry,9,6);g.fillRect(rx+7,ry-4,5,5);
+  g.fillRect(rx+8,ry-9,2,5);g.fillRect(rx+11,ry-9,2,5);
+  g.fillStyle='#EDE6D6';g.fillRect(rx-2,ry+2,3,3);
+  const fx=x+6+Math.sin(t*1.7+seed)*11, fy=y-8+Math.cos(t*2.1+seed)*5;
+  g.fillStyle='#C4497B';g.fillRect(fx,fy,3,2);g.fillRect(fx+3,fy-1,3,2);
 }
 /* ---- portraits ---- */
 function drawPortrait(g,pal,S2){
@@ -403,22 +619,44 @@ function drawPortrait(g,pal,S2){
   P(3,26,26,6,shirt);P(3,26,26,1,'rgba(0,0,0,0.22)');
   P(13,21,6,6,skin);P(13,21,6,1,dark);
   P(8,7,16,16,skin);P(6,13,2,4,skin);P(24,13,2,4,skin);P(9,21,14,2,dark);
-  P(7,4,18,5,hair);P(7,9,2,7,hair);P(23,9,2,7,hair);
-  if(pal.longHair){P(5,9,3,15,hair);P(24,9,3,15,hair);}
-  else if(pal.pony){P(25,8,3,13,hair);P(24,7,3,3,hair);}
+  if(pal.bald){P(10,7,12,2,'rgba(255,255,255,0.12)');P(7,12,2,5,hair);P(23,12,2,5,hair);}
+  else{
+    P(7,4,18,5,hair);P(7,9,2,7,hair);P(23,9,2,7,hair);
+    if(pal.longHair){P(5,9,3,15,hair);P(24,9,3,15,hair);}
+    else if(pal.pony){P(25,8,3,13,hair);P(24,7,3,3,hair);}
+  }
   P(11,12,4,1,hairD);P(17,12,4,1,hairD);
   P(11,14,4,3,'#EDE6D6');P(17,14,4,3,'#EDE6D6');
   P(12,15,2,2,'#1A1410');P(18,15,2,2,'#1A1410');
   P(15,16,2,3,shade(skin,0.88));P(13,20,6,1,'rgba(120,60,60,0.5)');
   if(pal.elder){P(9,11,2,1,'rgba(0,0,0,0.10)');P(21,11,2,1,'rgba(0,0,0,0.10)');}
   if(pal.freckles){for(let i=0;i<6;i++)P(10+(i*3)%12,18+(i%2),1,1,'rgba(140,90,60,0.35)');}
-  if(pal.beard)P(9,19,14,4,hair);
+  if(pal.beard){const bc=pal.beardColour||hair;P(9,19,14,4,bc);P(13,18,6,1,bc);}
+  else if(pal.goatee){const gc=pal.beardColour||hair;P(13,19,6,4,gc);P(13,18,6,1,gc);P(11,18,2,1,gc);P(19,18,2,1,gc);}
   else if(pal.stubble)P(10,19,12,4,'rgba(0,0,0,0.13)');
+  if(pal.paint){P(22,17,2,1,'#8C3A2E');P(22,19,3,1,'#4E8B8B');P(8,18,2,1,'#C4A44E');
+    P(6,27,4,1,'#8C3A2E');P(21,28,5,1,'#4E8B8B');}
   if(pal.glasses){const rim='#33302E';P(10,13,6,1,rim);P(10,17,6,1,rim);P(10,13,1,5,rim);P(15,13,1,5,rim);
     P(16,13,6,1,rim);P(16,17,6,1,rim);P(16,13,1,5,rim);P(21,13,1,5,rim);P(15,15,2,1,rim);}
+  const HC=pal.hatColour;
+  if(pal.hat==='witch'){const hb=HC||'#14101A';P(2,4,28,2,hb);
+    g.fillStyle=hb;g.beginPath();g.moveTo(9*S2,5*S2);g.lineTo(23*S2,5*S2);g.lineTo(17*S2,-7*S2);g.closePath();g.fill();
+    P(9,2,14,2,HC?shadeC(HC,1.55):'#6A4A9A');}
+  else if(pal.hat==='beret'){const bb=HC||'#7A2530';P(6,3,20,4,bb);P(8,1,16,3,bb);P(22,0,3,2,shadeC(bb,0.75));}
 }
 /* ---- item icons ---- */
 function drawIcon(g,label,S3){
+  {
+    const P2=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x*S3,y*S3,w*S3,h*S3);};
+    if(label==='Clay'){P2(2,8,12,6,'#8C5A42');P2(2,8,12,2,'#A06A4E');P2(5,10,4,2,'rgba(0,0,0,0.15)');return;}
+    if(label==='Fibre'){for(let i=0;i<4;i++)P2(3+i*3,4,2,9,'#C9A45E');P2(2,7,12,2,'#8C6A3C');return;}
+    if(label==='Feed'){P2(3,5,10,9,'#8C6A42');P2(3,5,10,2,'#A8844A');
+      P2(5,9,2,2,'#E0C46A');P2(9,10,2,2,'#E0C46A');P2(7,12,2,2,'#C9A44E');return;}
+    if(label==='Egg'){g.fillStyle='#EDE6D6';g.beginPath();g.ellipse(8*S3,9*S3,3.6*S3,4.6*S3,0,0,7);g.fill();
+      P2(6,7,2,2,'rgba(255,255,255,0.55)');return;}
+    if(label==='Milk'){P2(4,4,8,10,'#EDE6D6');P2(4,4,8,2,'#C8C4BC');P2(5,7,2,5,'rgba(255,255,255,0.5)');
+      P2(4,12,8,2,'#B8BCC4');return;}
+  }
   const P=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x*S3,y*S3,w*S3,h*S3);};
   const l=(label||'').toLowerCase();
   P(0,0,16,16,'rgba(237,230,214,0.05)');
@@ -437,12 +675,38 @@ function drawIcon(g,label,S3){
 }
 function drawToolIcon(g,id,S3){
   const P=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x*S3,y*S3,w*S3,h*S3);};
-  if(id==='hoe'){P(7,3,2,9,'#8C5A3C');P(5,11,7,2,'#A8A8B0');}
-  else if(id==='can'){P(4,6,7,7,'#7A8C8C');P(11,7,3,2,'#7A8C8C');P(3,5,9,1,'#A8BCBC');
+  const O=(x,y,w,h)=>{g.fillStyle='#14201A';g.fillRect((x-0.5)*S3,(y-0.5)*S3,(w+1)*S3,(h+1)*S3);};
+  if(id==='hoe'){
+    O(9,1,2,10);P(9,1,2,10,'#8C5A3C');P(9,1,1,10,'#A87A4A');
+    O(3,10,8,3);P(3,10,8,3,'#B8BCC4');P(3,10,8,1,'#DDE2E8');
+    P(3,10,2,5,'#B8BCC4');
+  }else if(id==='can'){
+    O(2,6,9,8);P(2,6,9,8,'#5E7E86');P(2,6,9,2,'#7FA0A8');
+    O(11,7,4,2);P(11,7,4,2,'#5E7E86');
+    P(13,8,2,4,'#5E7E86');P(14,11,2,1,'#7FA0A8');
+    O(4,3,5,3);P(4,3,5,3,'#5E7E86');
     const lvl=Math.max(0,Math.min(1,S?S.cans/8:0));
-    P(4,13-Math.round(6*lvl),7,Math.round(6*lvl),'#4E8B8B');}
-  else if(id==='seed'){P(4,6,8,7,'#8C6A42');P(6,9,1,1,'#E0C46A');P(9,10,1,1,'#E0C46A');}
-  else{P(6,5,4,6,'#E8C49B');P(5,8,6,4,'#E8C49B');P(6,11,4,3,'#D9A47C');}
+    if(lvl>0)P(3,13-Math.round(6*lvl),7,Math.round(6*lvl),'#4EA8C4');
+    P(3,7,3,2,'rgba(255,255,255,0.25)');
+  }else if(id==='seed'){
+    O(3,5,10,9);P(3,5,10,9,'#8C6A42');P(3,5,10,2,'#A8844A');
+    P(3,9,10,1,'rgba(0,0,0,0.22)');
+    P(5,10,2,2,'#E8E0C8');P(9,10,2,2,'#E0C46A');P(7,12,2,2,'#C4A44E');
+    P(6,2,1,3,'#6FA85C');P(9,1,1,4,'#6FA85C');P(5,3,2,1,'#8FBF5C');P(9,2,2,1,'#8FBF5C');
+  }else if(id==='axe'){
+    O(9,2,2,12);P(9,2,2,12,'#8C5A3C');P(9,2,1,12,'#A87A4A');
+    O(3,2,7,5);P(3,2,7,5,'#B8BCC4');P(3,2,7,2,'#DDE2E8');P(3,5,5,2,'#8A8E96');
+  }else if(id==='pick'){
+    O(8,4,2,11);P(8,4,2,11,'#8C5A3C');P(8,4,1,11,'#A87A4A');
+    O(2,2,14,3);P(2,2,14,3,'#B8BCC4');P(2,2,14,1,'#DDE2E8');
+    P(2,2,2,4,'#8A8E96');P(14,2,2,4,'#8A8E96');
+  }else{
+    O(5,4,6,8);P(5,4,6,8,'#E8C49B');
+    P(3,7,2,4,'#E8C49B');P(11,7,2,4,'#E8C49B');
+    P(5,4,6,1,'#F2D6B0');
+    P(5,12,6,2,'#D9A47C');
+    P(6,6,1,3,'rgba(0,0,0,0.12)');P(9,6,1,3,'rgba(0,0,0,0.12)');
+  }
 }
 
 /* ================= RENDER ================= */
@@ -509,6 +773,79 @@ function draw(){
   ctx.fillText('the table',tx+16,ty+2);
   /* depth-sorted buildings, trees, folk, player */
   const layer=[];
+  /* wild resources */
+  if(S.nodes)for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const nd=S.nodes[x+','+y];
+    if(!nd)continue;
+    const spent=nd.cut>S.day;
+    const px=x*TILE,py=y*TILE;
+    layer.push({y:py+26,f:()=>{
+      const a=spent?0.35:1;
+      ctx.globalAlpha=a;
+      if(nd.k==='tree'){
+        ctx.fillStyle='rgba(0,0,0,0.3)';ctx.beginPath();ctx.ellipse(px+16,py+28,11,4,0,0,7);ctx.fill();
+        if(spent){ctx.fillStyle='#4A3A28';ctx.fillRect(px+11,py+20,10,7);ctx.fillStyle='#5E4A34';ctx.fillRect(px+11,py+20,10,2);}
+        else{ctx.fillStyle='#3A2A1A';ctx.fillRect(px+13,py+12,6,16);
+          ctx.fillStyle='#1F3822';ctx.beginPath();ctx.arc(px+16,py+6,14,0,7);ctx.fill();
+          ctx.fillStyle='#294A2C';ctx.beginPath();ctx.arc(px+11,py+3,9,0,7);ctx.fill();
+          ctx.fillStyle='#34573A';ctx.beginPath();ctx.arc(px+21,py+2,7,0,7);ctx.fill();}
+      }else if(nd.k==='stump'){
+        ctx.fillStyle='rgba(0,0,0,0.25)';ctx.beginPath();ctx.ellipse(px+16,py+26,8,3,0,0,7);ctx.fill();
+        ctx.fillStyle='#4A3A28';ctx.fillRect(px+9,py+17,14,9);
+        ctx.fillStyle='#6B5238';ctx.fillRect(px+9,py+16,14,3);
+        ctx.fillStyle='#3A2C1E';ctx.fillRect(px+13,py+18,6,1);
+      }else if(nd.k==='rock'){
+        ctx.fillStyle='rgba(0,0,0,0.3)';ctx.beginPath();ctx.ellipse(px+16,py+25,11,4,0,0,7);ctx.fill();
+        ctx.fillStyle=spent?'#5A5A62':'#8A8A92';
+        ctx.beginPath();ctx.moveTo(px+4,py+25);ctx.lineTo(px+9,py+9);ctx.lineTo(px+21,py+7);ctx.lineTo(px+28,py+25);ctx.closePath();ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.18)';ctx.fillRect(px+10,py+12,7,3);
+      }else if(nd.k==='clay'){
+        ctx.fillStyle='rgba(0,0,0,0.2)';ctx.beginPath();ctx.ellipse(px+16,py+24,10,4,0,0,7);ctx.fill();
+        ctx.fillStyle='#8C5A42';ctx.beginPath();ctx.ellipse(px+16,py+20,10,6,0,0,7);ctx.fill();
+        ctx.fillStyle='#A06A4E';ctx.beginPath();ctx.ellipse(px+13,py+18,5,3,0,0,7);ctx.fill();
+      }else if(nd.k==='reed'){
+        for(let i=0;i<5;i++){const rx=px+6+i*5, h=10+((i*7)%9);
+          ctx.fillStyle='#6E8C4A';ctx.fillRect(rx,py+26-h,2,h);
+          ctx.fillStyle='#8FA85C';ctx.fillRect(rx-1,py+26-h,4,3);}
+      }else{
+        ctx.fillStyle='rgba(0,0,0,0.25)';ctx.beginPath();ctx.ellipse(px+16,py+26,9,3,0,0,7);ctx.fill();
+        ctx.fillStyle='#2E5A3C';ctx.beginPath();ctx.arc(px+16,py+18,9,0,7);ctx.fill();
+        ctx.fillStyle='#3E7050';ctx.beginPath();ctx.arc(px+11,py+15,5,0,7);ctx.fill();
+        if(!spent){ctx.fillStyle='#C4497B';
+          [[11,17],[19,15],[16,21]].forEach(([a,b])=>{ctx.beginPath();ctx.arc(px+a,py+b,2.4,0,7);ctx.fill();});}
+      }
+      ctx.globalAlpha=1;
+    }});
+  }
+  /* things you have built */
+  (S.built||[]).forEach(b=>{
+    const plan=PLANS.find(p=>p.id===b.id);if(!plan)return;
+    layer.push({y:(b.y+b.h)*TILE,f:()=>{
+      const X=b.x*TILE,Y=b.y*TILE,Wd=b.w*TILE,H=b.h*TILE;
+      const roof=({coop:'#C4744A',goatpen:'#5B7A8C',shed:'#8C6A3C',well2:'#7A8C8C',silo:'#C9A44E',barn:'#8C4A3C'})[b.id]||'#8C6A3C';
+      ctx.fillStyle='#5E4A3A';ctx.fillRect(X,Y,Wd,H);
+      ctx.fillStyle='rgba(0,0,0,0.15)';for(let i=1;i<b.h;i++)ctx.fillRect(X,Y+i*TILE-1,Wd,2);
+      for(let r=0;r<6;r++){ctx.fillStyle=r%2?roof:shadeC(roof,0.85);ctx.fillRect(X-6+r,Y-16+r*3,Wd+12-r*2,4);}
+      if(b.id==='well2'){
+        ctx.fillStyle='#5A5A62';ctx.fillRect(X+4,Y+8,Wd-8,H-12);
+        ctx.fillStyle='#2E3A44';ctx.fillRect(X+10,Y+12,Wd-20,H-22);
+      }else{
+        const dx=X+Math.floor(b.w/2)*TILE+6;
+        ctx.fillStyle='#2A2118';ctx.fillRect(dx-1,Y+H-26,20,26);
+        ctx.fillStyle='#43301E';ctx.fillRect(dx,Y+H-25,18,25);
+      }
+      if(b.id==='coop'){for(let i=0;i<3;i++){const cx=X+10+i*22,cy=Y+H+4+((i%2)*6);
+        ctx.fillStyle='#EDE6D6';ctx.fillRect(cx,cy,9,7);ctx.fillRect(cx+8,cy-3,5,5);
+        ctx.fillStyle='#C4493C';ctx.fillRect(cx+9,cy-5,3,2);
+        ctx.fillStyle='#E0A63D';ctx.fillRect(cx+12,cy-1,2,1);}}
+      if(b.id==='goatpen'){for(let i=0;i<2;i++){const cx=X+14+i*30,cy=Y+H+6;
+        ctx.fillStyle='#C8C4BC';ctx.fillRect(cx,cy,13,8);ctx.fillRect(cx+11,cy-5,7,6);
+        ctx.fillStyle='#8A8A92';ctx.fillRect(cx+12,cy-9,2,5);ctx.fillRect(cx+16,cy-9,2,5);
+        ctx.fillStyle='#1A1410';ctx.fillRect(cx+15,cy-3,2,2);}}
+      ctx.fillStyle='rgba(237,230,214,0.85)';ctx.font='10px Inter';ctx.textAlign='center';
+      ctx.fillText(plan.name,X+Wd/2,Y-20);
+    }});
+  });
   Object.values(BLD).forEach(b=>layer.push({y:(b.y+b.h)*TILE,f:()=>{
     const bx=b.x*TILE,by=b.y*TILE,bw=b.w*TILE,bh=b.h*TILE;
     ctx.fillStyle=b.wall;ctx.fillRect(bx,by,bw,bh);
@@ -543,8 +880,13 @@ function draw(){
       if(f.child){ctx.translate(fx+16,fy+30);ctx.scale(0.8,0.8);ctx.translate(-(fx+16),-(fy+30));}
       drawPerson(ctx,fx,fy,f.pal,0,1);
       ctx.restore();
+      if(f.pal.critters)drawCritters(ctx,fx,fy,hashStr(f.id));
       ctx.fillStyle='rgba(237,230,214,0.9)';ctx.font='10px Inter';ctx.textAlign='center';
       ctx.fillText(f.name.split(' ')[0],fx+16,fy-8);
+      if(Math.hypot(fx-S.px,fy-S.py)<5*TILE){
+        ctx.font='9px Inter';ctx.fillStyle='rgba(237,230,214,0.5)';
+        ctx.fillText('· '+folkDoing(f)+' ·',fx+16,fy-20);
+      }
     }});
   });
   layer.push({y:S.py+24,f:()=>{
@@ -553,6 +895,19 @@ function draw(){
       shirt:p.top,pants:'#3A3A42'},pstep,pface);
   }});
   layer.sort((a,b)=>a.y-b.y).forEach(i=>i.f());
+  if(S.placing){
+    const plan=PLANS.find(p=>p.id===S.placing);
+    if(plan){
+      const t=facingTile();
+      ctx.globalAlpha=0.55;
+      ctx.fillStyle='#6FA85C';ctx.fillRect(t.x*TILE,t.y*TILE,plan.w*TILE,plan.h*TILE);
+      ctx.globalAlpha=1;
+      ctx.strokeStyle='#E0A63D';ctx.lineWidth=2;
+      ctx.strokeRect(t.x*TILE,t.y*TILE,plan.w*TILE,plan.h*TILE);
+      ctx.fillStyle='#E0A63D';ctx.font='bold 11px Inter';ctx.textAlign='center';
+      ctx.fillText(plan.name+' — press E',t.x*TILE+plan.w*TILE/2,t.y*TILE-6);
+    }
+  }
   /* the tile you're about to work */
   const t=facingTile();
   if(t&&curTool().id!=='hand'){
@@ -567,6 +922,15 @@ function draw(){
 }
 
 /* ================= VILLAGER POSITIONS ================= */
+function folkDoing(f){
+  const h=S.min/60;
+  if(h<7)return 'not up yet';
+  if(h>=21)return 'turning in';
+  if(h>=18)return 'at the long table with everyone';
+  const jobs=f.job||['about their work'];
+  const slot=Math.floor((S.min-8*60)/90);
+  return jobs[Math.abs(slot+hashStr(f.id))%jobs.length];
+}
 function folkPos(f){
   const b=BLD[f.at];
   const h=S.min/60;
@@ -605,15 +969,19 @@ function drawToolbar(){
   const tb=document.getElementById('toolbar');
   tb.innerHTML=TOOLS.map((t,i)=>{
     const sel=(S.tool%TOOLS.length)===i;
-    let n='';
-    if(t.id==='seed'){const s=selectedSeed();n=s?bagCount(s):0;}
+    let n='',lbl=t.name;
+    if(t.id==='seed'){const s=selectedSeed();n=s?bagCount(s):0;
+      lbl=s?String(s).replace(/ seeds?$/i,''):'Seeds';}
     if(t.id==='can')n=S.cans;
-    return '<div class="slot'+(sel?' sel':'')+'" data-t="'+i+'"><canvas width="32" height="32"></canvas>'
+    return '<div class="slot'+(sel?' sel':'')+'" data-t="'+i+'">'
+      +'<span class="key">'+(i+1)+'</span>'
+      +'<canvas width="44" height="44"></canvas>'
+      +'<span class="lbl">'+lbl+'</span>'
       +(n!==''?'<span class="n">'+n+'</span>':'')+'</div>';
   }).join('');
   tb.querySelectorAll('.slot').forEach((el,i)=>{
     const g=el.querySelector('canvas').getContext('2d');
-    g.imageSmoothingEnabled=false;drawToolIcon(g,TOOLS[i].id,2);
+    g.imageSmoothingEnabled=false;drawToolIcon(g,TOOLS[i].id,2.75);
     el.onclick=()=>{S.tool=i;drawToolbar();save();};
   });
 }
@@ -638,6 +1006,8 @@ function nearest(){
   if(dt<bd){bd=dt;best={type:'table'};}
   const db=Math.hypot(BLD.hall.door.x*TILE-S.px,(BLD.hall.door.y)*TILE-S.py);
   if(db<bd){bd=db;best={type:'board'};}
+  const ds=Math.hypot(BLD.supply.door.x*TILE-S.px,(BLD.supply.door.y)*TILE-S.py);
+  if(ds<bd){bd=ds;best={type:'supply'};}
   const dh=Math.hypot(BLD.home.door.x*TILE-S.px,(BLD.home.door.y)*TILE-S.py);
   if(dh<bd){bd=dh;best={type:'bed'};}
   return best;
@@ -645,13 +1015,21 @@ function nearest(){
 function hintText(){
   const n=nearest();
   if(n){
-    if(n.type==='folk')return 'Talk to '+n.f.name.split(' ')[0]+'  (E)';
+    if(n.type==='folk')return 'Talk to '+n.f.name.split(' ')[0]+' — '+folkDoing(n.f)+'  (E)';
     if(n.type==='well')return 'Fill the watering can  (E)';
     if(n.type==='table')return 'The sharing table  (E)';
     if(n.type==='board')return 'The needs board  (E)';
+    if(n.type==='supply')return 'The Supply House  (E)';
     if(n.type==='bed')return 'Turn in for the night  (E)';
   }
   const t=facingTile();const tool=curTool();
+  const nd=nodeAt(t.x,t.y);
+  if(nd){
+    const K=NODEKIND[nd.k];
+    if(K.tool==='hand'||tool.id===K.tool)return K.label+'  (E)';
+    return 'Needs the '+(K.tool==='axe'?'axe':'pick');
+  }
+  if(S.placing)return 'Set it down here  (E)';
   if(tool.id==='hand'){const p=plot(t.x,t.y);if(ripe(p))return 'Harvest  (E)';return '';}
   if(!inFarm(t.x,t.y))return '';
   const p=plot(t.x,t.y);
@@ -672,9 +1050,22 @@ function interact(){
     if(n.type==='well'){S.cans=8;drawToolbar();toast('Watering can filled');save();return;}
     if(n.type==='table')return openTable();
     if(n.type==='board')return openBoard();
+    if(n.type==='supply')return openSupply();
     if(n.type==='bed')return doSleep();
   }
   const t=facingTile(),tool=curTool();
+  const nd=nodeAt(t.x,t.y);
+  if(nd){
+    const K=NODEKIND[nd.k];
+    if(K.tool!=='hand'&&tool.id!==K.tool){toast('You need the '+(K.tool==='axe'?'axe':'pick')+' for that.');return;}
+    if(!spend(K.stam))return;
+    const got=K.n+(hashStr('g'+t.x+t.y+S.day)%2);
+    bagAdd(K.item,got);
+    nd.cut=S.day+K.regrow;
+    toast('+'+got+' '+K.item);
+    save();return;
+  }
+  if(S.placing){placeHere(t.x,t.y);return;}
   const p=plot(t.x,t.y);
   if(tool.id==='hand'){
     if(ripe(p)){
@@ -708,6 +1099,99 @@ function interact(){
   }
 }
 
+
+/* ================= BLUEPRINTS ================= */
+const PLANS=[
+  {id:'coop',   name:'Chicken coop',  cost:{Wood:20,Fibre:8},          w:4,h:3,
+   note:'Six hens. Eggs every morning, and they follow you about.',   gives:'A hen house. Collect eggs at dawn.'},
+  {id:'goatpen',name:'Goat shelter',  cost:{Wood:26,Stone:10,Fibre:6}, w:5,h:3,
+   note:'Milk, and something to shout at.',                            gives:'Two goats. Milk each morning.'},
+  {id:'shed',   name:'Tool shed',     cost:{Wood:16,Stone:8},          w:3,h:3,
+   note:'Somewhere to put the things you keep tripping over.',         gives:'Carry four more of everything.'},
+  {id:'well2',  name:'Second well',   cost:{Stone:24,Clay:10},         w:2,h:2,
+   note:'Out by your ground, so the walk stops eating the morning.',   gives:'Fill the can without crossing the valley.'},
+  {id:'silo',   name:'Silo',          cost:{Wood:30,Stone:18,Clay:12}, w:3,h:4,
+   note:'Feed keeps. Winter stops being frightening.',                 gives:'Feed stores for the animals.'},
+  {id:'barn',   name:'Barn',          cost:{Wood:60,Stone:30,Fibre:20},w:6,h:4,
+   note:'The big one. Orrin says he will help if you get the timber up.',gives:'Room for everything, and everyone.'},
+];
+function has(cost){return Object.keys(cost).every(k=>bagCount(k)>=cost[k]);}
+function payFor(cost){Object.keys(cost).forEach(k=>bagTake(k,cost[k]));}
+function builtPlan(id){return (S.built||[]).some(b=>b.id===id);}
+
+function placeHere(x,y){
+  const plan=PLANS.find(p=>p.id===S.placing);
+  if(!plan){S.placing=null;return;}
+  for(let dy=0;dy<plan.h;dy++)for(let dx=0;dx<plan.w;dx++){
+    const cx=x+dx,cy=y+dy;
+    if(cx<2||cy<2||cx>=RIVER_X-1||cy>=MH-2){toast('Not there — too close to the edge.');return;}
+    if(anyNodeAt(cx,cy)){toast('Clear the ground first.');return;}
+    if(S.farm[key(cx,cy)]){toast('That is planted ground.');return;}
+    if(Object.values(BLD).some(b=>cx>=b.x&&cx<b.x+b.w&&cy>=b.y&&cy<b.y+b.h)){toast('Something is already there.');return;}
+    if((S.built||[]).some(b=>cx>=b.x&&cx<b.x+b.w&&cy>=b.y&&cy<b.y+b.h)){toast('Something is already there.');return;}
+  }
+  if(!has(plan.cost)){toast('Not enough materials any more.');S.placing=null;return;}
+  payFor(plan.cost);
+  S.built.push({id:plan.id,x,y,w:plan.w,h:plan.h,day:S.day});
+  S.placing=null;
+  S.standing+=3;
+  toast(plan.name+' built. '+plan.gives);
+  drawToolbar();save();
+}
+
+function openSupply(){
+  paused=true;
+  const feedRows=[
+    {item:'Feed',    cost:{Wheat:2},        note:'A sack of feed. The animals will tell you when it runs out.'},
+    {item:'Fibre',   cost:{Wheat:1},        note:'Twisted from straw. Everything needs a bit of it.'},
+    {item:'Turnip seeds',cost:{Turnip:1},   note:'Seed back from your own crop.'},
+    {item:'Carrot seeds',cost:{Carrot:1},   note:'Seed back from your own crop.'},
+    {item:'Wheat seeds', cost:{Wheat:1},    note:'Seed back from your own crop.'},
+  ].map(r=>{
+    const can=has(r.cost);
+    const costs=Object.keys(r.cost).map(k=>r.cost[k]+' '+k).join(', ');
+    return '<div class="row"><div><strong>'+r.item+'</strong><div class="hint">'+r.note+'</div>'
+      +'<div class="hint">give back: '+costs+'</div></div>'
+      +'<button '+(can?'class="primary" ':'disabled ')+'data-swap="'+r.item+'" data-c=\''+JSON.stringify(r.cost)+'\'>Take</button></div>';
+  }).join('');
+  const planRows=PLANS.map(p=>{
+    const done=builtPlan(p.id);
+    const can=has(p.cost);
+    const costs=Object.keys(p.cost).map(k=>{
+      const short=bagCount(k)<p.cost[k];
+      return '<span style="color:'+(short?'var(--rose)':'var(--green)')+'">'+bagCount(k)+'/'+p.cost[k]+' '+k+'</span>';
+    }).join(' · ');
+    return '<div class="row"><div style="min-width:0;"><strong>'+p.name+'</strong>'
+      +(done?' <span class="hint">· built</span>':'')
+      +'<div class="hint">'+p.note+'</div>'
+      +'<div class="hint">'+costs+'</div></div>'
+      +(done?'<span class="hint">done</span>'
+        :'<button '+(can?'class="primary" ':'disabled ')+'data-plan="'+p.id+'">'+(can?'Build':'Short')+'</button>')
+      +'</div>';
+  }).join('');
+  OR('<h3>The Supply House</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Nothing is sold here. Bring back what you grew and take what you need — '
+    +'the plans are free to anyone who will use them.</div>'
+    +'<h3 style="font-size:14px;margin:14px 0 6px;">Feed &amp; seed</h3>'+feedRows
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">Plans</h3>'
+    +'<div class="hint" style="margin-bottom:8px;">Choose one and you will carry the frame out with you — face a clear patch of ground and press E to set it down.</div>'
+    +planRows
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-swap]').forEach(b=>{if(b.disabled)return;
+    b.onclick=()=>{
+      const cost=JSON.parse(b.dataset.c);
+      if(!has(cost))return;
+      payFor(cost);bagAdd(b.dataset.swap,1);
+      S.standing+=1;save();toast('+1 '+b.dataset.swap);openSupply();
+    };});
+  document.querySelectorAll('[data-plan]').forEach(b=>{if(b.disabled)return;
+    b.onclick=()=>{
+      S.placing=b.dataset.plan;save();close();
+      const p=PLANS.find(x=>x.id===b.dataset.plan);
+      toast('Carrying the '+p.name+' frame — face clear ground and press E');
+    };});
+  document.getElementById('closeB').onclick=close;
+}
 /* ================= NEEDS BOARD ================= */
 function rollNeeds(){
   if(S.needsDay===S.day&&S.needs.length)return;
@@ -979,6 +1463,14 @@ function openMenu(){
 }
 
 /* ================= DAY ================= */
+async function morningYield(){
+  const out=[];
+  (S.built||[]).forEach(b=>{
+    if(b.id==='coop'){bagAdd('Egg',2+(hashStr('e'+S.day)%2));out.push('eggs');}
+    if(b.id==='goatpen'){bagAdd('Milk',2);out.push('milk');}
+  });
+  return out;
+}
 async function doSleep(){
   paused=true;
   const grew=[];
@@ -987,7 +1479,9 @@ async function doSleep(){
     if(p.crop&&p.wet){p.stage=(p.stage||0)+1;if(ripe(p))grew.push(CROPS[p.crop].name);}
     p.wet=false;
   });
-  S.day++;S.min=DAY_START;S.stam=STAMINA;S.cans=Math.max(S.cans,0);
+  S.day++;S.min=DAY_START;S.stam=STAMINA;
+  const got=morningYield();
+  if(got.length)setTimeout(()=>toast('Morning — '+got.join(' and ')+' collected'),1200);S.cans=Math.max(S.cans,0);
   S.needs=[];S.needsDay=0;
   await save();updateHud();drawToolbar();
   const ripeN=Object.values(S.farm).filter(p=>ripe(p)).length;
