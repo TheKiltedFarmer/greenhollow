@@ -304,6 +304,11 @@ function newGame(){
   const folk={};FOLK.forEach(f=>{folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
   return {day:1,min:DAY_START,stam:STAMINA,runId:Date.now(),
     player:{name:'',skin:'#E8C49B',hair:'#6B4226',hairStyle:'short',top:'#4E8B8B'},
+    jobs:{jess:'seedkeep',justin:'baker',sana:'smith',kayla:'preserve',patrick:'woodsman',
+          andrew:'maker',zak:'teacher',jason:'warden',rachel:'healer',heather:'ground',
+          conrad:'cook',aiden:'orchard',lillyan:'weaver',luna:'beekeep',elliot:'miller',
+          kat:'shepherd',quinn:'brewer',angus:'builder'},
+    claimed:null,          /* which villager is you */
     farm:{},bag:[{item:'Turnip seeds',n:6},{item:'Carrot seeds',n:4},{item:'Wood',n:8},{item:'Stone',n:4},{item:'Fibre',n:4}],
     nodes:null,built:[],placing:null,
     tool:0,cans:0,folk,standing:0,needs:[],needsDay:0,shared:[],
@@ -316,6 +321,7 @@ async function load(){
     if(r&&r.value){S=JSON.parse(r.value);
       S.farm=S.farm||{};S.bag=S.bag||[];S.folk=S.folk||{};S.needs=S.needs||[];S.shared=S.shared||[];
       S.built=S.built||[];if(!S.nodes)S.nodes=buildNodes();
+      S.jobs=S.jobs||newGame().jobs;S.claimed=S.claimed||null;
       /* if a save predates a map change, put the player back on solid ground */
       const tx=Math.floor(S.px/TILE),ty=Math.floor(S.py/TILE);
       if(!(tx>1&&ty>1&&tx<MW-2&&ty<MH-2)){S.px=30*TILE;S.py=38*TILE;}
@@ -353,7 +359,9 @@ const NET={
       try{localStorage.setItem('gh-secret',s);}catch(e){}}
     return s;
   },
-  look(){return {skin:S.player.skin,hair:S.player.hair,hairStyle:S.player.hairStyle,top:S.player.top};},
+  look(){const me=(typeof meFolk==='function')&&meFolk();
+    return me?{pal:me.pal,name:me.name,claimed:me.id,job:careerOf(me.id)}
+             :{skin:S.player.skin,hair:S.player.hair,hairStyle:S.player.hairStyle,top:S.player.top};},
   async create(name){
     if(!this.init())return {error:'Shared valleys are not switched on in this copy.'};
     this.secret=this.mySecret();
@@ -410,7 +418,7 @@ const NET={
   async sync(){
     if(!this.ready())return;
     await this.sb.rpc('grower_sync',{p_code:this.code,p_secret:this.secret,
-      p_plot:S.farm,p_look:this.look(),p_standing:S.standing});
+      p_plot:S.farm,p_look:Object.assign({},this.look(),{claimed:S.claimed}),p_standing:S.standing});
   },
   async note(to,body){
     const {data}=await this.sb.rpc('note_leave',{p_code:this.code,p_secret:this.secret,p_to:to,p_body:body});
@@ -912,12 +920,13 @@ function draw(){
     ctx.fillStyle='#34573A';ctx.beginPath();ctx.arc(tx2+21,ty2+2,7,0,7);ctx.fill();
   }}));
   FOLK.forEach(f=>{
-    const pos=folkPos(f);
-    layer.push({y:pos.y*TILE+24,f:()=>{
-      const fx=pos.x*TILE,fy=pos.y*TILE;
+    if(isMe(f))return;                 /* that one is you — drawn as the player */
+    const st=folkState(f);
+    layer.push({y:st.y+24,f:()=>{
+      const fx=st.x,fy=st.y;
       ctx.save();
       if(f.child){ctx.translate(fx+16,fy+30);ctx.scale(0.8,0.8);ctx.translate(-(fx+16),-(fy+30));}
-      drawPerson(ctx,fx,fy,f.pal,0,1);
+      drawPerson(ctx,fx,fy,f.pal,st.step,st.face);
       ctx.restore();
       if(f.pal.critters)drawCritters(ctx,fx,fy,hashStr(f.id));
       ctx.fillStyle='rgba(237,230,214,0.9)';ctx.font='10px Inter';ctx.textAlign='center';
@@ -934,6 +943,17 @@ function draw(){
     }});
   });
   layer.push({y:S.py+24,f:()=>{
+    const me=meFolk();
+    if(me){
+      ctx.save();
+      if(me.child){ctx.translate(S.px+16,S.py+30);ctx.scale(0.8,0.8);ctx.translate(-(S.px+16),-(S.py+30));}
+      drawPerson(ctx,S.px,S.py,me.pal,pstep,pface);
+      ctx.restore();
+      if(me.pal.critters)drawCritters(ctx,S.px,S.py,hashStr(me.id));
+      ctx.fillStyle='rgba(237,230,214,0.95)';ctx.font='10px Inter';ctx.textAlign='center';
+      ctx.fillText(me.name.split(' ')[0],S.px+16,S.py-8);
+      return;
+    }
     const p=S.player;
     drawPerson(ctx,S.px,S.py,{skin:p.skin,hair:p.hair,longHair:p.hairStyle==='long',pony:p.hairStyle==='pony',
       shirt:p.top,pants:'#3A3A42'},pstep,pface);
@@ -968,15 +988,18 @@ function draw(){
 /* ================= VILLAGER POSITIONS ================= */
 function folkDoing(f){
   const h=S.min/60;
+  const c=careerById(careerOf(f.id));
   if(h<7)return 'not up yet';
   if(h>=21)return 'turning in';
   if(h>=18)return 'at the long table with everyone';
-  const jobs=f.job||['about their work'];
+  const jobs=(f.job&&f.job.length?f.job:[]).concat(c?[c.verb]:[]);
+  if(!jobs.length)return 'about their work';
   const slot=Math.floor((S.min-8*60)/90);
   return jobs[Math.abs(slot+hashStr(f.id))%jobs.length];
 }
 function folkPos(f){
-  const b=BLD[f.at];
+  const c=careerById(careerOf(f.id));
+  const b=BLD[(c&&c.at)||f.at]||BLD.hall;
   const h=S.min/60;
   /* everyone at a building gets their own spot outside it */
   const mates=FOLK.filter(x=>x.at===f.at);
@@ -1042,6 +1065,315 @@ function drawToolbar(){
   });
 }
 
+
+
+/* ================= CAREERS =================
+   One person to a trade. Claim one and whoever had it moves on
+   to whatever is still free — and takes a new name with them,
+   so there are never two of anybody.                            */
+const CAREERS=[
+  {id:'seedkeep', name:'Seed keeper',   at:'seedhouse', verb:'sorting seed',            desc:'Keep the library. Everything that grows here passed through your hands once.'},
+  {id:'baker',    name:'Baker',         at:'kitchen',   verb:'pulling loaves out',      desc:'Grain in, bread out. There is a free shelf by the door.'},
+  {id:'cook',     name:'Cook',          at:'kitchen',   verb:'stirring something',      desc:'The long kitchen feeds anyone who turns up.'},
+  {id:'preserve', name:'Preserver',     at:'kitchen',   verb:'labelling jars',          desc:'Pies, jams, and the winter shelf.'},
+  {id:'smith',    name:'Smith',         at:'forge',     verb:'under something with a spanner', desc:'Mend what breaks. Nobody pays you and nobody has to.'},
+  {id:'builder',  name:'Builder',       at:'forge',     verb:'measuring twice',         desc:'Barns, fences, and whatever the board asks for.'},
+  {id:'maker',    name:'Maker',         at:'forge',     verb:'wiring something odd',    desc:'Build impossible things. Nobody here asks what they are for.'},
+  {id:'teacher',  name:'Teacher',       at:'hall',      verb:'reading aloud',           desc:'One room, whoever turns up, and a bucket under the leak.'},
+  {id:'healer',   name:'Healer',        at:'hall',      verb:'sorting the medicine shelf', desc:'Stitches, fevers, and bad news delivered kindly.'},
+  {id:'warden',   name:'Warden',        at:'hall',      verb:'checking the far gates',  desc:'Walk the valley at night. Quiet is the job going well.'},
+  {id:'orchard',  name:'Orchardist',    at:'hives',     verb:'pruning low branches',    desc:'Apples, plums, and a quince nobody asked for.'},
+  {id:'beekeep',  name:'Beekeeper',     at:'hives',     verb:'up at the hives',         desc:'Six hives at the treeline. They are calm this week.'},
+  {id:'shepherd', name:'Shepherd',      at:'hives',     verb:'counting the flock',      desc:'Wool, milk, and the endless business of fences.'},
+  {id:'ground',   name:'Ground-reader', at:'hives',     verb:'hammering at the bluff',  desc:'Read the river and the rock, and say what the ground will do.'},
+  {id:'brewer',   name:'Brewer',        at:'kitchen',   verb:'watching a barrel',       desc:'Ale for the long table. Batch three is questionable.'},
+  {id:'miller',   name:'Miller',        at:'seedhouse', verb:'shouldering a sack',      desc:'Grain to flour, and the wheel to keep turning.'},
+  {id:'weaver',   name:'Weaver',        at:'seedhouse', verb:'at the loom',             desc:'Fibre to cloth. Everyone in the valley is wearing your work.'},
+  {id:'woodsman', name:'Woodsman',      at:'hives',     verb:'out at the treeline',     desc:'Keep the woods, feed the crows, and know where everything is.'},
+  {id:'fisher',   name:'Fisher',        at:'hives',     verb:'down at the water',       desc:'The river gives up something most mornings.'},
+  {id:'carpenter',name:'Carpenter',     at:'forge',     verb:'planing a board',         desc:'Doors, gates, and the long table itself.'},
+  {id:'potter',   name:'Potter',        at:'seedhouse', verb:'at the wheel',            desc:'Clay from the riverbank into everything the valley eats off.'},
+  {id:'herbalist',name:'Herbalist',     at:'hall',      verb:'drying bundles',          desc:'What grows wild, and what it is good for.'},
+  {id:'carter',   name:'Carter',        at:'seedhouse', verb:'loading the cart',        desc:'Move what needs moving, to wherever it is short.'},
+  {id:'ranger',   name:'Ranger',        at:'hives',     verb:'walking the boundary',    desc:'Know the paths, the weather, and where the deer are getting in.'},
+];
+function careerById(id){return CAREERS.find(c=>c.id===id);}
+/* who holds what: {careerId: folkId} */
+function careerHolder(cid){
+  const f=FOLK.find(x=>(S.jobs&&S.jobs[x.id])===cid);
+  return f||null;
+}
+function careerOf(fid){return (S.jobs&&S.jobs[fid])||null;}
+function freeCareers(){
+  const taken=new Set(Object.values(S.jobs||{}));
+  return CAREERS.filter(c=>!taken.has(c.id));
+}
+/* spare names for a villager who has been moved along */
+const SPARE_NAMES=['Rowan Ash','Perrin Vale','Nessa Crowe','Bram Ivey','Odile Fenn','Cass Holloway',
+  'Wren Tully','Mabel Rook','Elgin Frey','Saoirse Bell','Tomas Quill','Ines Marsh','Hollis Vane',
+  'Dara Finch','Ovid Small','Petra Lund','Milo Rye','Anwen Todd'];
+function spareName(){
+  const used=new Set(FOLK.map(f=>f.name));
+  for(const n of SPARE_NAMES){if(!used.has(n))return n;}
+  return 'Somebody New';
+}
+/* ================= FOLK ON THE MOVE ================= */
+const FS={};   /* live position for each villager, kept out of the save */
+function folkState(f){
+  if(!FS[f.id]){
+    const p=folkPos(f);
+    FS[f.id]={x:p.x*TILE,y:p.y*TILE,tx:p.x*TILE,ty:p.y*TILE,step:0,face:1,idle:Math.random()*4};
+  }
+  return FS[f.id];
+}
+function folkTarget(f){
+  const base=folkPos(f);
+  const st=folkState(f);
+  const h=S.min/60;
+  /* while they are at work they potter about their own patch */
+  if(h>=8&&h<18){
+    st.idle-=1/60;
+    if(st.idle<=0){
+      st.idle=2.5+Math.random()*5;
+      const ox=Math.round((Math.random()-0.5)*4), oy=Math.round((Math.random()-0.5)*3);
+      const nx=base.x+ox, ny=base.y+oy;
+      if(nx>1&&ny>1&&nx<MW-2&&ny<MH-2&&!tileBlocked(nx,ny)){st.tx=nx*TILE;st.ty=ny*TILE;}
+    }
+  }else{
+    st.tx=base.x*TILE;st.ty=base.y*TILE;
+  }
+  return st;
+}
+function updateFolk(dt){
+  FOLK.forEach(f=>{
+    const st=folkTarget(f);
+    const dx=st.tx-st.x, dy=st.ty-st.y, d=Math.hypot(dx,dy);
+    if(d>1.5){
+      const sp=46*dt;
+      st.x+=dx/d*Math.min(sp,d);
+      st.y+=dy/d*Math.min(sp,d);
+      st.step+=dt*7;
+      st.face=Math.abs(dx)>Math.abs(dy)?(dx>0?2:3):(dy>0?1:0);
+    }else{
+      st.step=0;
+      /* long walks between places snap the schedule target so they set off */
+      const base=folkPos(f);
+      const far=Math.hypot(base.x*TILE-st.x,base.y*TILE-st.y);
+      if(far>3*TILE){st.tx=base.x*TILE;st.ty=base.y*TILE;}
+    }
+  });
+}
+
+/* ================= BECOMING SOMEBODY ================= */
+function isMe(f){return S.claimed===f.id;}
+function meFolk(){return FOLK.find(f=>f.id===S.claimed)||null;}
+function takeCareer(fid,cid){
+  /* whoever holds it gets moved along, renamed, and given whatever is free */
+  const prev=careerHolder(cid);
+  if(prev&&prev.id!==fid){
+    const free=freeCareers().filter(c=>c.id!==cid);
+    const give=free.length?free[hashStr(prev.id+cid)%free.length]:null;
+    S.jobs[prev.id]=give?give.id:null;
+    if(!prev.wasRenamed){
+      prev.name=spareName();
+      prev.wasRenamed=true;
+      prev.moved=true;
+    }
+    if(give)prev.at=give.at;
+  }
+  S.jobs[fid]=cid;
+  const f=FOLK.find(x=>x.id===fid);
+  const c=careerById(cid);
+  if(f&&c)f.at=c.at;
+  save();
+  return prev&&prev.id!==fid?prev:null;
+}
+function openClaim(){
+  paused=true;
+  const taken=new Set();
+  (NET.growers||[]).forEach(g=>{
+    const c=g.look&&g.look.claimed;
+    if(c&&g.id!==NET.me)taken.add(c);
+  });
+  const rows=FOLK.map(f=>{
+    const job=careerById(careerOf(f.id));
+    const mine=S.claimed===f.id;
+    const gone=taken.has(f.id)&&!mine;
+    return '<div class="row"><div class="who" style="display:flex;gap:10px;align-items:center;">'
+      +'<canvas class="pf" data-p="'+f.id+'" width="40" height="40" style="width:38px;height:38px;image-rendering:pixelated;border:1px solid var(--line);border-radius:4px;"></canvas>'
+      +'<div><strong>'+esc(f.name)+'</strong>'+(f.child?' <span class="hint">· '+f.child+'</span>':'')
+      +'<div class="hint">'+(job?esc(job.name):'no trade yet')+(gone?' · already taken':'')+'</div></div></div>'
+      +(mine?'<span class="hint" style="color:var(--green);">that is you</span>'
+        :(gone?'<span class="hint">taken</span>'
+              :'<button class="primary" data-be="'+f.id+'">Be them</button>'))+'</div>';
+  }).join('');
+  OR('<h3>Who are you here?</h3>'
+    +'<p class="sub">Pick somebody in the valley and they become yours — you can rename them, change how they look, and choose their trade. '
+    +'When you are away they carry on: working, walking, turning up to supper.</p>'
+    +rows
+    +'<div class="acts"><button id="newB">Somebody new</button>'
+    +'<button class="primary" id="closeB">'+(S.claimed?'Close':'Later')+'</button></div>');
+  document.querySelectorAll('.pf').forEach(c=>{
+    const f=FOLK.find(z=>z.id===c.dataset.p);
+    const g=c.getContext('2d');g.imageSmoothingEnabled=false;drawPortrait(g,f.pal,c.width/32);
+  });
+  document.querySelectorAll('[data-be]').forEach(b=>b.onclick=()=>{
+    S.claimed=b.dataset.be;
+    const f=meFolk();
+    if(f){S.px=folkState(f).x;S.py=folkState(f).y;}
+    save();openMe();
+  });
+  document.getElementById('newB').onclick=()=>{
+    const id='new'+Date.now().toString(36);
+    const free=freeCareers();
+    const c=free.length?free[0]:CAREERS[0];
+    FOLK.push({id,name:S.player.name||'Somebody New',role:c.name,
+      pal:{skin:S.player.skin,hair:S.player.hair,hairStyle:S.player.hairStyle,shirt:S.player.top,pants:'#3A3A42'},
+      at:c.at,job:[c.verb],likes:['Wheat','Carrot'],
+      intro:"I'm new here. Still finding my way about.",
+      lines:{work:["Getting the hang of it."],village:["Everyone's been kind so far."]}});
+    S.jobs[id]=c.id;S.claimed=id;
+    save();openMe();
+  };
+  document.getElementById('closeB').onclick=close;
+}
+function openMe(){
+  paused=true;
+  const f=meFolk();
+  if(!f){openClaim();return;}
+  const job=careerById(careerOf(f.id));
+  const free=freeCareers();
+  const opts=(job?[job]:[]).concat(free);
+  const jobRows=opts.map(c=>{
+    const mine=job&&c.id===job.id;
+    return '<div class="row"><div style="min-width:0;"><strong>'+esc(c.name)+'</strong>'
+      +(mine?' <span class="hint" style="color:var(--green);">· yours</span>':'')
+      +'<div class="hint">'+esc(c.desc)+'</div></div>'
+      +(mine?'':'<button data-job="'+c.id+'">Take it</button>')+'</div>';
+  }).join('');
+  const kin=FOLK.filter(x=>x.household===f.id);
+  OR('<h3>You</h3>'
+    +'<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:10px;">'
+    +'<canvas id="mePort" width="64" height="64" style="width:76px;height:76px;image-rendering:pixelated;border:1px solid var(--line);border-radius:5px;flex-shrink:0;"></canvas>'
+    +'<div style="flex:1;min-width:0;">'
+    +'<input type="text" id="nm" maxlength="24" value="'+esc(f.name)+'" '
+    +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);padding:8px 10px;border-radius:4px;font-size:15px;"/>'
+    +'<div class="hint" style="margin-top:4px;">'+(job?esc(job.name):'no trade')+'</div>'
+    +'</div></div>'
+    +'<div id="looks"></div>'
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">Your trade</h3>'
+    +'<div class="hint" style="margin-bottom:8px;">One person to a trade. Take one that is free and whoever had it moves along to something else.</div>'
+    +jobRows
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">Your household</h3>'
+    +(kin.length?kin.map(k=>'<div class="row"><div><strong>'+esc(k.name)+'</strong><div class="hint">'+(k.child?('age '+k.child):'lives with you')+'</div></div>'
+        +'<button data-kin="'+k.id+'">Edit</button></div>').join('')
+      :'<div class="hint">Nobody yet.</div>')
+    +'<div class="acts" style="margin-bottom:10px;"><button id="addKin">Add somebody</button></div>'
+    +'<div class="acts"><button id="swapB">Be somebody else</button><button class="primary" id="closeB">Done</button></div>');
+  const paint=()=>{const c=document.getElementById('mePort');if(!c)return;
+    const g=c.getContext('2d');g.imageSmoothingEnabled=false;g.clearRect(0,0,c.width,c.height);
+    drawPortrait(g,f.pal,c.width/32);};
+  const looks=()=>{
+    const el=document.getElementById('looks');if(!el)return;
+    const row=(label,field)=>'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">'
+      +'<span style="font-size:12px;color:var(--dim);min-width:74px;">'+label+'</span>'
+      +'<button data-cyc="'+field+'" data-d="-1" style="padding:4px 10px;">◀</button>'
+      +'<span id="v_'+field+'" style="font-size:12px;flex:1;text-align:center;"></span>'
+      +'<button data-cyc="'+field+'" data-d="1" style="padding:4px 10px;">▶</button></div>';
+    el.innerHTML=row('Skin','skin')+row('Hair','hair')+row('Hair style','hairStyle')
+      +row('Top','shirt')+row('Hat','hat');
+    el.querySelectorAll('[data-cyc]').forEach(b=>b.onclick=()=>{
+      cycleLook(f.pal,b.dataset.cyc,parseInt(b.dataset.d));
+      save();paint();labels();
+    });
+    labels();
+  };
+  const labels=()=>{
+    const set=(k,v)=>{const e=document.getElementById('v_'+k);if(e)e.innerText=v;};
+    set('skin','—');set('hair','—');
+    set('hairStyle',f.pal.longHair?'Long':(f.pal.pony?'Ponytail':'Short'));
+    set('shirt','—');
+    set('hat',f.pal.hat?({witch:'Witch hat',beret:'Beret'})[f.pal.hat]||f.pal.hat:'None');
+  };
+  paint();looks();
+  document.getElementById('nm').oninput=e=>{f.name=e.target.value.slice(0,24)||'Somebody';save();};
+  document.querySelectorAll('[data-job]').forEach(b=>b.onclick=()=>{
+    const moved=takeCareer(f.id,b.dataset.job);
+    if(moved)toast(moved.name+' has taken up something else.');
+    openMe();
+  });
+  document.getElementById('addKin').onclick=()=>{
+    const id='kin'+Date.now().toString(36);
+    FOLK.push({id,name:'New face',role:'lives with '+f.name.split(' ')[0],household:f.id,
+      pal:{skin:f.pal.skin,hair:f.pal.hair,shirt:'#8C6A9C',pants:'#3A3A42'},
+      at:f.at,job:['about the place'],likes:['Berries'],
+      intro:"I'm with "+f.name.split(' ')[0]+".",
+      lines:{work:["Helping. Sort of."],village:["It's a good valley."]}});
+    save();openMe();
+  };
+  document.querySelectorAll('[data-kin]').forEach(b=>b.onclick=()=>openKin(b.dataset.kin));
+  document.getElementById('swapB').onclick=openClaim;
+  document.getElementById('closeB').onclick=close;
+}
+function openKin(id){
+  paused=true;
+  const k=FOLK.find(x=>x.id===id);
+  if(!k){openMe();return;}
+  OR('<h3>'+esc(k.name)+'</h3>'
+    +'<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:10px;">'
+    +'<canvas id="kp" width="64" height="64" style="width:70px;height:70px;image-rendering:pixelated;border:1px solid var(--line);border-radius:5px;"></canvas>'
+    +'<input type="text" id="kn" maxlength="24" value="'+esc(k.name)+'" '
+    +'style="flex:1;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);padding:8px 10px;border-radius:4px;font-size:15px;"/></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">'
+    +'<span style="font-size:12px;color:var(--dim);min-width:74px;">Age</span>'
+    +'<button data-age="-1" style="padding:4px 10px;">◀</button>'
+    +'<span id="ageV" style="flex:1;text-align:center;font-size:12px;">'+(k.child||'grown')+'</span>'
+    +'<button data-age="1" style="padding:4px 10px;">▶</button></div>'
+    +'<div id="klooks"></div>'
+    +'<div class="acts"><button id="delB" style="border-color:var(--rose);color:var(--rose);">Remove</button>'
+    +'<button class="primary" id="backB">Back</button></div>');
+  const paint=()=>{const c=document.getElementById('kp');const g=c.getContext('2d');
+    g.imageSmoothingEnabled=false;g.clearRect(0,0,c.width,c.height);drawPortrait(g,k.pal,c.width/32);};
+  const el=document.getElementById('klooks');
+  const row=(label,field)=>'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">'
+    +'<span style="font-size:12px;color:var(--dim);min-width:74px;">'+label+'</span>'
+    +'<button data-c="'+field+'" data-d="-1" style="padding:4px 10px;">◀</button>'
+    +'<span style="flex:1;"></span><button data-c="'+field+'" data-d="1" style="padding:4px 10px;">▶</button></div>';
+  el.innerHTML=row('Skin','skin')+row('Hair','hair')+row('Hair style','hairStyle')+row('Top','shirt');
+  el.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{cycleLook(k.pal,b.dataset.c,parseInt(b.dataset.d));save();paint();});
+  paint();
+  document.getElementById('kn').oninput=e=>{k.name=e.target.value.slice(0,24)||'Somebody';save();};
+  document.querySelectorAll('[data-age]').forEach(b=>b.onclick=()=>{
+    const ages=[false,4,6,8,10,12,14,16];
+    let i=ages.indexOf(k.child||false);if(i<0)i=0;
+    i=(i+parseInt(b.dataset.age)+ages.length)%ages.length;
+    k.child=ages[i]||undefined;
+    document.getElementById('ageV').innerText=k.child||'grown';
+    save();paint();
+  });
+  document.getElementById('delB').onclick=()=>{
+    const i=FOLK.findIndex(x=>x.id===id);if(i>=0)FOLK.splice(i,1);
+    delete FS[id];save();openMe();
+  };
+  document.getElementById('backB').onclick=openMe;
+}
+const LOOK_SKIN=['#F2E3D0','#E8C49B','#E2B187','#D9A47C','#B07B52','#8A5A3C','#6B4A32'];
+const LOOK_HAIR=['#6B4226','#3A2A1A','#1A1410','#C8C4BC','#D4B25E','#8C2F1E','#C4497B','#3A6EA5','#2E6A6A'];
+const LOOK_TOP =['#4E8B8B','#C25B4A','#6B5B8C','#C4A44E','#3E5A46','#7A9455','#8C6A9C','#1E1A22','#B87A4A'];
+const LOOK_HAT =[null,'beret','witch'];
+function cycleLook(pal,field,d){
+  const pick=(arr,cur)=>{let i=arr.indexOf(cur);if(i<0)i=0;return arr[(i+d+arr.length)%arr.length];};
+  if(field==='skin')pal.skin=pick(LOOK_SKIN,pal.skin);
+  else if(field==='hair')pal.hair=pick(LOOK_HAIR,pal.hair);
+  else if(field==='shirt')pal.shirt=pick(LOOK_TOP,pal.shirt);
+  else if(field==='hat'){const h=pick(LOOK_HAT,pal.hat||null);if(h)pal.hat=h;else delete pal.hat;}
+  else if(field==='hairStyle'){
+    const cur=pal.longHair?'long':(pal.pony?'pony':'short');
+    const nx=pick(['short','long','pony'],cur);
+    delete pal.longHair;delete pal.pony;
+    if(nx==='long')pal.longHair=true;if(nx==='pony')pal.pony=true;
+  }
+}
 /* ================= INTERACTION ================= */
 function facingTile(){
   const cxp=S.px+16,cyp=S.py+18;
@@ -1569,9 +1901,14 @@ function openMenu(){
     +(NET.ready()?('Sharing the valley <strong>'+esc(NET.code)+'</strong> with '+(NET.others().length)+' other'+(NET.others().length===1?'':'s')+'.')
                  :'Playing on your own. You can share a valley with friends — they just need a code.')
     +'</div></div>'
+    +'<div class="card"><strong>You</strong><div class="hint">'
+    +(S.claimed?(esc((meFolk()||{}).name||'')+' — '+esc((careerById(careerOf(S.claimed))||{}).name||'no trade')):'You have not settled on anybody yet.')
+    +'</div></div>'
+    +'<div class="acts" style="margin-bottom:10px;"><button class="primary" id="meB">'+(S.claimed?'Change who you are':'Choose who you are')+'</button></div>'
     +'<div class="acts" style="margin-bottom:10px;"><button class="primary" id="valB">'+(NET.ready()?'Your valley':'Play with friends')+'</button></div>'
     +'<div class="acts"><button id="resetB" style="border-color:var(--rose);color:var(--rose);">Start over</button>'
     +'<button class="primary" id="closeB">Back</button></div>');
+  const mb=document.getElementById('meB');if(mb)mb.onclick=()=>{S.claimed?openMe():openClaim();};
   const vb=document.getElementById('valB');if(vb)vb.onclick=openValley;
   const rb=document.getElementById('resetB');
   rb.onclick=async function(){
@@ -1682,6 +2019,7 @@ function loop(ts){
     }
     const mm=Math.floor(S.min);
     if(mm!==lastMin){lastMin=mm;updateHud();}
+    updateFolk(dt);
     draw();
   }
   requestAnimationFrame(loop);
