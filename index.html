@@ -134,6 +134,8 @@ const BLD={
   c4:{x:64,y:18,w:4,h:3,label:'',wall:'#5A5248',roof:'#8C6A3C',roof2:'#7A5C32',cot:true},
   c5:{x:70,y:18,w:4,h:3,label:'',wall:'#4E5A62',roof:'#5E7482',roof2:'#526674',cot:true},
   c6:{x:76,y:18,w:4,h:3,label:'',wall:'#66504A',roof:'#8C6250',roof2:'#7A5444',cot:true},
+  c7:{x:82,y:18,w:4,h:3,label:'',wall:'#4A5A54',roof:'#5E7A70',roof2:'#526A62',cot:true},
+  c8:{x:88,y:18,w:4,h:3,label:'',wall:'#5E5448',roof:'#7A6A50',roof2:'#6A5C46',cot:true},
 };
 Object.keys(BLD).forEach(k=>{const b=BLD[k];b.id=k;b.door={x:b.x+Math.floor(b.w/2),y:b.y+b.h};});
 const WELL={x:58,y:44};
@@ -257,7 +259,7 @@ const BASE_FOLK=[
   likes:['Wheat','Pumpkin']},
  {id:'aiden',name:'Aiden Fairchild',role:'Justin & Jessica\'s eldest, 13',
   pal:{skin:'#E2B187',hair:'#D4B25E',freckles:true,shirt:'#4E8B8B',pants:'#3A3A42'},
-  at:'kitchen',child:true,
+  at:'kitchen',child:true,household:'justin',
   job:['hauling sacks and complaining','off on the bike','pretending to help','down at the river'],
   intro:"Aiden. The bakery's my parents'. I'm the oldest, which mostly means carrying things.",
   lines:{work:["Sacks. Always sacks. Dad says it builds character.","I'm fixing my bike. It's not broken. It's being improved."],
@@ -265,7 +267,7 @@ const BASE_FOLK=[
   likes:['Berries','Pumpkin']},
  {id:'lillyan',name:'Lillyan Fairchild',role:'Justin & Jessica\'s daughter, 10',
   pal:{skin:'#E8C49B',hair:'#D4B25E',longHair:true,paint:true,freckles:true,shirt:'#C4497B',pants:'#4A4438'},
-  at:'hall',child:true,
+  at:'hall',child:true,household:'justin',
   job:['chalking something on a wall','painting her own arms','organising the smaller ones','asking Zak difficult questions'],
   intro:"Lillyan! I'm ten. I paint — on paper, on the road, mostly on me. Have you found Mister Fig yet?",
   lines:{work:["This one's a fern. That one went wrong so now it's a fish.","Mister Fig's my cat. I made him up. He's on a lot of walls."],
@@ -273,7 +275,7 @@ const BASE_FOLK=[
   likes:['Berries','Tomato']},
  {id:'luna',name:'Luna Fairchild',role:'Justin & Jessica\'s daughter, 7',
   pal:{skin:'#E8C49B',hair:'#C4497B',longHair:true,critters:true,shirt:'#B0688C',pants:'#44503E'},
-  at:'hives',child:true,
+  at:'hives',child:true,household:'justin',
   job:['followed by three animals','talking to a sparrow','drawing the dog wrong','sat very still so the rabbit stays'],
   intro:"Luna. I'm seven. The animals come to me. I don't call them, they just come.",
   lines:{work:["The sparrows sit on my hand. Only for good ones, though.","I'm drawing Barley. His legs come out wrong because he won't sit still."],
@@ -281,7 +283,7 @@ const BASE_FOLK=[
   likes:['Carrot','Berries']},
  {id:'elliot',name:'Elliot Fairchild',role:'Justin & Jessica\'s youngest, 4',
   pal:{skin:'#E2B187',hair:'#D4B25E',shirt:'#E0A63D',pants:'#4A4438'},
-  at:'kitchen',child:true,
+  at:'kitchen',child:true,household:'justin',
   job:['digging a hole','carrying one single carrot with great seriousness','under a table','shouting about a dinosaur'],
   intro:"I'm Elliot. I'm FOUR.",
   lines:{work:["There's a HOLE. It's mine.","I'm helping. I've got a carrot."],
@@ -289,7 +291,7 @@ const BASE_FOLK=[
   likes:['Pumpkin','Carrot']},
  {id:'kat',name:'Kat Knapp',role:'Jason & Rachel\'s daughter, 11',
   pal:{skin:'#E5BC96',hair:'#3A2A1A',pony:true,shirt:'#7FA8A8',pants:'#3A3A42'},
-  at:'hives',child:true,
+  at:'hives',child:true,household:'jason',
   job:['in the river again','racing somebody to the bridge','asking Rachel gruesome questions','drying off, reluctantly'],
   intro:"Kat Knapp. Mum's the nurse, Dad walks about at night. I swim — I'm fast, whatever Mum says.",
   lines:{work:["The deep bit past the willow. Don't tell Mum.","Mum lets me watch the stitches. It's brilliant."],
@@ -297,7 +299,7 @@ const BASE_FOLK=[
   likes:['Berries','Turnip']},
  {id:'quinn',name:'Quinn Lyons',role:'Zak & Heather\'s eldest, 12',
   pal:{skin:'#E8C49B',hair:'#D4B25E',longHair:true,shirt:'#B87A4A',pants:'#33303E'},
-  at:'hall',child:true,
+  at:'hall',child:true,household:'zak',
   job:['sorting rocks she has outgrown','reading on the wall','avoiding her father at school','labelling things'],
   intro:"Quinn. My dad teaches and my mum hits rocks with a hammer. It's as embarrassing as it sounds.",
   lines:{work:["It's not a rock collection. It's a reference set. There's a difference.","Reading. Somewhere Dad isn't."],
@@ -305,12 +307,53 @@ const BASE_FOLK=[
   likes:['Stone','Carrot']},
  {id:'angus',name:'Angus Lyons',role:'Zak & Heather\'s youngest, 6',
   pal:{skin:'#E8C49B',hair:'#CC8F4E',freckles:true,shirt:'#4E8B5A',pants:'#44503E'},
-  at:'forge',child:true,
+  at:'forge',child:true,household:'zak',
   job:['watching Andrew work, too closely','wellies on the wrong feet','being a dinosaur','telling somebody a secret'],
   intro:"ANGUS. My dad's the teacher. Do you like dinosaurs? Andrew has a REAL one. Nearly real.",
   lines:{work:["I'm watching the raptor. Andrew says I can hold the screwdriver.","My wellies are on wrong. I know. It's fine."],
          village:["Everybody lets me in everywhere. Quinn says that's because I'm small."]},
   likes:['Pumpkin','Berries']},
+
+ {id:'amanda',name:'Amanda Eller',role:'Teaches whoever turns up',
+  pal:{skin:'#E5BC96',hair:'#5A3A24',pony:true,shirt:'#4E7A8C',pants:'#3E4438'},
+  at:'hall',
+  job:['reading aloud to whoever sits still','marking on her knee','out on the bluff before anyone else','showing a child how to tie off'],
+  intro:"Amanda Eller. I tutor — reading, sums, whatever's short that week. I built websites in a former life and I don't miss it. Jake's mine, and three of ours are about somewhere.",
+  lines:{work:["Reading and sums, and one of mine has gone quiet on me. I'll get to the bottom of it.","Good. Tiring. Children are relentless and I'd not swap it."],
+         village:["Nobody here asks what a thing is worth, which took me a year to stop finding strange.","I climb. There's nothing here high enough, but the bluff will do on a bad week."]},
+  likes:['Berries','Carrot','Bread']},
+ {id:'jake',name:'Jake Eller',role:'Mends what nobody else can',
+  pal:{skin:'#E2B187',hair:'#5A3A24',shirt:'#5B6A7A',pants:'#3A3A42'},
+  at:'forge',
+  job:['elbow-deep in something','coiling cable badly','testing a thing that should not work','stood back looking at it'],
+  intro:"Jake Eller. If it's broken and nobody else can face it, it ends up with me. Amanda's my wife. We've three, and they're all louder than her.",
+  lines:{work:["Something's always broken. It's job security of a sort.","Steady. I'd rather fix a thing than talk about fixing it."],
+         village:["Bring me the thing you gave up on. I'll not charge you, because there's nothing to charge.","Amanda climbs. I hold the rope and worry. It's an arrangement."]},
+  likes:['Iron','Wood','Rope']},
+ {id:'sylvie',name:'Sylvie Eller',role:"Amanda & Jake's eldest, 12",
+  pal:{skin:'#E5BC96',hair:'#5A3A24',longHair:true,shirt:'#8C6A9C',pants:'#3A3A42'},
+  at:'hall',child:12,household:'amanda',
+  job:['reading somewhere out of the way','up the bluff with her mother','minding the little ones under protest','pretending not to be the eldest'],
+  intro:"Sylvie. Mum teaches, Dad fixes things. I'm the oldest, which mostly means I get blamed.",
+  lines:{work:["Climbing with Mum. I'm better than Beau and he knows it.","Reading. Somewhere the little ones aren't."],
+         village:["Everyone knows everyone. It's fine. It's just very small."]},
+  likes:['Berries','Bread']},
+ {id:'beau',name:'Beau Eller',role:"Amanda & Jake's middle, 9",
+  pal:{skin:'#E2B187',hair:'#5A3A24',freckles:true,shirt:'#6FA85C',pants:'#44503E'},
+  at:'hall',child:9,household:'amanda',
+  job:['up something he should not be up','muddy to the elbow','racing Kat to the bridge','explaining a stone at length'],
+  intro:"BEAU. I'm nine. I climbed the thing behind the forge and I'm not allowed to say which thing.",
+  lines:{work:["Climbing stuff. Not mountains yet. Mum says when I'm twelve.","The river. We're not supposed to and everyone does."],
+         village:["Angus has a dinosaur. Well — Andrew does. Same thing."]},
+  likes:['Berries','Pumpkin']},
+ {id:'gerald',name:'Gerald Eller',role:"Amanda & Jake's youngest, 6",
+  pal:{skin:'#E5BC96',hair:'#5A3A24',shirt:'#E0A63D',pants:'#4A4438'},
+  at:'hall',child:6,household:'amanda',
+  job:['following Beau at a distance','carrying one stone very seriously','sat down where he stopped','telling somebody a fact'],
+  intro:"I'm Gerald. I'm six. I'm nearly seven, actually.",
+  lines:{work:["I follow Beau. He says not to and I do it anyway.","I've got a stone. It's better than Beau's stone."],
+         village:["Elliot's four. I'm six. That's two more."]},
+  likes:['Berries','Egg']},
 ];
 
 /* ================= STATE ================= */
@@ -323,8 +366,8 @@ function newGame(){
   return {day:1,min:DAY_START,stam:STAMINA,runId:Date.now(),
     player:{name:'',skin:'#E8C49B',hair:'#6B4226',hairStyle:'short',top:'#4E8B8B'},
     jobs:{jess:'seedkeep',justin:'baker',sana:'smith',kayla:'preserve',patrick:'woodsman',
-          andrew:'maker',zak:'teacher',jason:'warden',rachel:'healer',heather:'ground',
-          conrad:'cook'},
+          andrew:'maker',zak:'herbalist',jason:'warden',rachel:'healer',heather:'ground',
+          conrad:'cook',amanda:'teacher',jake:'builder'},
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
     delve:null, reports:[], stock:{},
@@ -384,12 +427,20 @@ const NET={
   look(){const me=(typeof meFolk==='function')&&meFolk();
     return me?{pal:me.pal,name:me.name,claimed:me.id,job:careerOf(me.id)}
              :{skin:S.player.skin,hair:S.player.hair,hairStyle:S.player.hairStyle,top:S.player.top};},
-  async create(name){
+  async checkCode(code){
+    if(!this.init())return {ok:false,why:'not configured'};
+    const {data,error}=await this.sb.rpc('code_free',{p_code:code});
+    if(error)return {ok:false,why:error.message};
+    return data||{ok:false,why:'could not check'};
+  },
+  async create(name,code){
     if(!this.init())return {error:'Shared valleys are not switched on in this copy.'};
     this.secret=this.mySecret();
     const {data,error}=await this.sb.rpc('valley_create',
-      {p_name:name||'',p_handle:S.player.name||'grower',p_secret:this.secret,p_look:this.look()});
+      {p_name:name||'',p_handle:S.player.name||'grower',p_secret:this.secret,
+       p_look:this.look(),p_code:code||null});
     if(error)return {error:error.message};
+    if(data&&data.error)return {error:data.error};
     this.code=data.code;this.me=data.id;
     try{localStorage.setItem('gh-valley',this.code);}catch(e){}
     await this.pull();
@@ -1851,7 +1902,13 @@ function folkPos(f){
   const h=S.min/60;
   if(h<7||h>=21.5){
     const hb=BLD[homeOf(f)];
-    if(hb)return {x:hb.door.x,y:hb.door.y+1};
+    if(hb){
+      const mates=FOLK.filter(x=>homeOf(x)===hb.id);
+      const i=mates.findIndex(x=>x.id===f.id);
+      const ring=[[0,1],[2,1],[-2,1],[1,2],[-1,2],[3,2],[-3,2],[0,3],[2,3],[-2,3],[4,2],[-4,2]];
+      const r=ring[(i<0?0:i)%ring.length];
+      return {x:hb.door.x+r[0],y:hb.door.y+r[1]};
+    }
   }
   const c=careerById(careerOf(f.id));
   const b=BLD[(c&&c.at)||f.at]||BLD.hall;
@@ -2007,11 +2064,14 @@ function spareName(){
 }
 
 /* ================= HOMES ================= */
-const COTS=['c1','c2','c3','c4','c5','c6'];
+const COTS=['c1','c2','c3','c4','c5','c6','c7','c8'];
+const COUPLES={jess:'justin',rachel:'jason',heather:'zak',conrad:'kayla',jake:'amanda'};
 function homeOf(f){
   if(f.household){const p=FOLK.find(x=>x.id===f.household);if(p)return homeOf(p);}
-  const grown=FOLK.filter(x=>!x.child&&!x.household);
-  const i=grown.findIndex(x=>x.id===f.id);
+  if(COUPLES[f.id]){const p=FOLK.find(x=>x.id===COUPLES[f.id]);if(p)return homeOf(p);}
+  /* one cottage per household, in a settled order */
+  const heads=FOLK.filter(x=>!x.child&&!x.household&&!COUPLES[x.id]);
+  const i=heads.findIndex(x=>x.id===f.id);
   return COTS[(i<0?hashStr(f.id):i)%COTS.length];
 }
 function indoors(f){
@@ -3423,7 +3483,11 @@ function openValley(){
     OR('<h3>Playing with friends</h3>'
       +'<p class="sub">Start a valley and share the code, or type the code a friend sent you. No sign-up, no password.</p>'
       +'<div class="card"><strong>Start a new valley</strong>'
-      +'<div class="hint" style="margin-bottom:8px;">You will get a code to text people.</div>'
+      +'<div class="hint" style="margin-bottom:8px;">Name it yourself so it is easy to pass on — or leave it blank and take one at random.</div>'
+      +'<input type="text" id="own" maxlength="24" placeholder="FAIRCHILD-FARM" autocapitalize="characters" '
+      +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);'
+      +'padding:10px 12px;border-radius:4px;font-size:15px;letter-spacing:.06em;font-family:IBM Plex Mono,monospace;margin-bottom:6px;"/>'
+      +'<div class="hint" id="chk" style="min-height:16px;margin-bottom:6px;"></div>'
       +'<button class="primary" id="mk">Make a valley</button></div>'
       +'<div class="card" style="margin-top:10px;"><strong>Join one</strong>'
       +'<div class="hint" style="margin-bottom:8px;">Type the code exactly as it was sent.</div>'
@@ -3434,9 +3498,22 @@ function openValley(){
       +'<div class="hint" id="msg" style="margin-top:8px;"></div>'
       +'<div class="acts"><button id="closeB">Not now</button></div>');
     const msg=t=>{const m=document.getElementById('msg');if(m)m.innerText=t;};
+    const own=document.getElementById('own');
+    const chk=document.getElementById('chk');
+    let timer=null;
+    if(own)own.oninput=()=>{
+      const v=own.value.trim();
+      clearTimeout(timer);
+      if(!v){chk.innerText='';chk.style.color='';return;}
+      timer=setTimeout(async()=>{
+        const r=await NET.checkCode(v);
+        chk.innerText=r.ok?('✓ '+r.code+' is free'):('· '+(r.why||''));
+        chk.style.color=r.ok?'var(--green)':'var(--dim)';
+      },350);
+    };
     document.getElementById('mk').onclick=async()=>{
       msg('Breaking ground…');
-      const r=await NET.create('');
+      const r=await NET.create('',own?own.value.trim():'');
       if(r.error){msg(r.error);return;}
       openValley();
     };
