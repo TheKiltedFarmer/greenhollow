@@ -128,6 +128,12 @@ const BLD={
   forge   :{x:64,y:40,w:5,h:3,label:'Sana & Andrew\'s',wall:'#5A5248',roof:'#8C5A4A',roof2:'#7A4E40'},
   hives   :{x:74,y:24,w:5,h:3,label:'The Hives',      wall:'#5E5A44',roof:'#C9A44E',roof2:'#B08F3C'},
   hall    :{x:60,y:48,w:7,h:4,label:'The Commons Hall',wall:'#4E4638',roof:'#5B7A8C',roof2:'#4E6A7A'},
+  c1:{x:46,y:18,w:4,h:3,label:'',wall:'#5E4A3A',roof:'#7A5A44',roof2:'#6A4E3A',cot:true},
+  c2:{x:52,y:18,w:4,h:3,label:'',wall:'#4E5A46',roof:'#5E7456',roof2:'#52664C',cot:true},
+  c3:{x:58,y:18,w:4,h:3,label:'',wall:'#54506A',roof:'#665E86',roof2:'#585078',cot:true},
+  c4:{x:64,y:18,w:4,h:3,label:'',wall:'#5A5248',roof:'#8C6A3C',roof2:'#7A5C32',cot:true},
+  c5:{x:70,y:18,w:4,h:3,label:'',wall:'#4E5A62',roof:'#5E7482',roof2:'#526674',cot:true},
+  c6:{x:76,y:18,w:4,h:3,label:'',wall:'#66504A',roof:'#8C6250',roof2:'#7A5444',cot:true},
 };
 Object.keys(BLD).forEach(k=>{const b=BLD[k];b.id=k;b.door={x:b.x+Math.floor(b.w/2),y:b.y+b.h};});
 const WELL={x:58,y:44};
@@ -999,15 +1005,29 @@ function draw(){
     for(let i=0;i<Math.max(1,b.w-2);i++){
       const wx=bx+i*TILE+12,wy=by+bh/2-6;
       ctx.fillStyle='#2A2118';ctx.fillRect(wx-1,wy-1,12,15);
-      ctx.fillStyle=(S.min/60<7||S.min/60>19)?'rgba(224,166,61,0.9)':'rgba(120,150,170,0.5)';
+      ctx.fillStyle=(b.cot?cottageLit(b.id):(S.min/60<7||S.min/60>19))?'rgba(224,166,61,0.95)':'rgba(120,150,170,0.5)';
       ctx.fillRect(wx,wy,10,13);
       ctx.fillStyle='#2A2118';ctx.fillRect(wx+4,wy,2,13);ctx.fillRect(wx,wy+6,10,2);}
     const dx=b.door.x*TILE+6;
     ctx.fillStyle='#2A2118';ctx.fillRect(dx-1,by+bh-26,20,26);
     ctx.fillStyle='#43301E';ctx.fillRect(dx,by+bh-25,18,25);
     ctx.fillStyle='#E0A63D';ctx.fillRect(dx+13,by+bh-14,2,2);
-    ctx.fillStyle='rgba(237,230,214,0.85)';ctx.font='10px Inter';ctx.textAlign='center';
-    ctx.fillText(b.label,bx+bw/2,by-22);
+    if(b.label){
+      ctx.fillStyle='rgba(237,230,214,0.85)';ctx.font='10px Inter';ctx.textAlign='center';
+      ctx.fillText(b.label,bx+bw/2,by-22);
+    }
+    if(b.cot){
+      /* chimney, and smoke while anybody is home */
+      ctx.fillStyle='#4A4440';ctx.fillRect(bx+bw-16,by-24,10,12);
+      if(cottageLit(b.id)){
+        const tm=Date.now()/900;
+        for(let k=0;k<3;k++){
+          const off=(tm*13+k*11)%32;
+          ctx.fillStyle='rgba(210,210,220,'+(0.22-off/160)+')';
+          ctx.fillRect(bx+bw-14+Math.sin(tm+k)*3,by-28-off,7,5);
+        }
+      }
+    }
   }}));
   TREES.forEach(([x,y])=>layer.push({y:(y+1)*TILE,f:()=>{
     const tx2=x*TILE,ty2=y*TILE;
@@ -1019,6 +1039,7 @@ function draw(){
   }}));
   FOLK.forEach(f=>{
     if(isMe(f))return;                 /* that one is you — drawn as the player */
+    if(indoors(f))return;              /* they are in bed, and the window is lit */
     const st=folkState(f);
     layer.push({y:st.y+24,f:()=>{
       const fx=st.x,fy=st.y;
@@ -1087,8 +1108,11 @@ function draw(){
 const CHILD_DOING=['off on the bike','down at the river','chalking something on a wall',
   'trailed by three animals','asking somebody a difficult question','carrying one thing very seriously',
   'up a tree','being a dinosaur','collecting something in a jar'];
+const EARLY=['stoking the fire','out before anyone else','fetching water','feeding the hens',
+  'stood in the doorway with a cup','looking at the weather'];
 function folkDoing(f){
   const h=S.min/60;
+  if(h<8&&h>=5)return EARLY[Math.abs(Math.floor(S.min/40)+hashStr(f.id))%EARLY.length];
   if(f.child){
     if(h<7)return 'not up yet';
     if(h>=21)return 'meant to be in bed';
@@ -1107,9 +1131,13 @@ function folkDoing(f){
   return jobs[Math.abs(slot+hashStr(f.id))%jobs.length];
 }
 function folkPos(f){
+  const h=S.min/60;
+  if(h<7||h>=21.5){
+    const hb=BLD[homeOf(f)];
+    if(hb)return {x:hb.door.x,y:hb.door.y+1};
+  }
   const c=careerById(careerOf(f.id));
   const b=BLD[(c&&c.at)||f.at]||BLD.hall;
-  const h=S.min/60;
   /* everyone at a building gets their own spot outside it */
   const mates=FOLK.filter(x=>x.at===f.at);
   const i=mates.findIndex(x=>x.id===f.id);
@@ -1260,6 +1288,24 @@ function spareName(){
   for(const n of SPARE_NAMES){if(!used.has(n))return n;}
   return 'Somebody New';
 }
+
+/* ================= HOMES ================= */
+const COTS=['c1','c2','c3','c4','c5','c6'];
+function homeOf(f){
+  if(f.household){const p=FOLK.find(x=>x.id===f.household);if(p)return homeOf(p);}
+  const grown=FOLK.filter(x=>!x.child&&!x.household);
+  const i=grown.findIndex(x=>x.id===f.id);
+  return COTS[(i<0?hashStr(f.id):i)%COTS.length];
+}
+function indoors(f){
+  const h=S.min/60;
+  if(S.claimed===f.id)return false;
+  return (h<7||h>=21.5);
+}
+function cottageLit(id){
+  const h=S.min/60;
+  return (h<7.5||h>=20.5);
+}
 /* ================= FOLK ON THE MOVE ================= */
 const FS={};   /* live position for each villager, kept out of the save */
 function folkState(f){
@@ -1273,11 +1319,11 @@ function folkTarget(f){
   const base=folkPos(f);
   const st=folkState(f);
   const h=S.min/60;
-  /* while they are at work they potter about their own patch */
-  if(h>=8&&h<18){
+  /* about their business from first light until bed */
+  if(h>=6&&h<21){
     st.idle-=1/60;
     if(st.idle<=0){
-      st.idle=2.5+Math.random()*5;
+      st.idle=(h<8?4:2.5)+Math.random()*5;
       const ox=Math.round((Math.random()-0.5)*4), oy=Math.round((Math.random()-0.5)*3);
       const nx=base.x+ox, ny=base.y+oy;
       if(nx>1&&ny>1&&nx<MW-2&&ny<MH-2&&!tileBlocked(nx,ny)){st.tx=nx*TILE;st.ty=ny*TILE;}
