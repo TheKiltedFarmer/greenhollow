@@ -604,7 +604,7 @@ const BODY_DOWN=[
   '..KKRRRRRRRRKK..',
   '..KRSSSSSSSSRK..',
   '..KRSSSSSSSSRK..',
-  '..KRSEwSSwESSK..',
+  '..KRSEESSEESSK..',
   '..KRSSSSSSSSRK..',
   '..KKSSSnnSSSKK..',
   '...KSsSSSSsSK...',
@@ -694,9 +694,12 @@ function palFor(pal){
   };
 }
 function lookKey(pal,face,frame){
-  return [pal.skin,pal.hair,pal.shirt,pal.pants,pal.longHair?1:0,pal.pony?1:0,pal.bald?1:0,
-          pal.beard?1:0,pal.goatee?1:0,pal.glasses?1:0,pal.hat||'',pal.hatColour||'',
-          pal.kilt?pal.kilt.base:'',face,frame].join('|');
+  return [pal.skin,pal.hair,pal.shirt,pal.pants,
+          pal.longHair?1:0,pal.pony?1:0,pal.bald?1:0,
+          pal.beard?1:0,pal.goatee?1:0,pal.beardColour||pal.beardColor||'',
+          pal.glasses?1:0,pal.hat||'',pal.hatColour||'',
+          pal.kilt?pal.kilt.base:'',pal.paint?1:0,pal.freckles?1:0,pal.critters?1:0,
+          face,frame].join('|');
 }
 function personSprite(pal,face,frame){
   const key=lookKey(pal,face,frame);
