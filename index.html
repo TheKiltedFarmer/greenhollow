@@ -107,6 +107,7 @@
 /* ================= CONFIG ================= */
 const TILE=32, MW=120, MH=96, KEY='greenhollow-v4';
 const DAY_START=6*60, DAY_END=24*60, MIN_PER_SEC=1/0.55;
+const BAG_SLOTS=24;
 const STAMINA=24;
 const storageShim={
   async get(k){const v=localStorage.getItem(k);return v==null?null:{key:k,value:v};},
@@ -144,7 +145,7 @@ const CROPS={
 const SEED_OF={};Object.keys(CROPS).forEach(k=>SEED_OF[CROPS[k].seed]=k);
 
 /* ================= VILLAGERS ================= */
-const FOLK=[
+const BASE_FOLK=[
  {id:'jess',name:'Jessica Fairchild',role:'Runs the pasta kitchen',
   pal:{skin:'#E5BC96',hair:'#5A3A24',longHair:true,shirt:'#7A9455',pants:'#4A4438',hat:'witch',hatColour:'#2E5A3C'},
   at:'seedhouse',
@@ -306,28 +307,30 @@ function newGame(){
     player:{name:'',skin:'#E8C49B',hair:'#6B4226',hairStyle:'short',top:'#4E8B8B'},
     jobs:{jess:'seedkeep',justin:'baker',sana:'smith',kayla:'preserve',patrick:'woodsman',
           andrew:'maker',zak:'teacher',jason:'warden',rachel:'healer',heather:'ground',
-          conrad:'cook',aiden:'orchard',lillyan:'weaver',luna:'beekeep',elliot:'miller',
-          kat:'shepherd',quinn:'brewer',angus:'builder'},
+          conrad:'cook'},
     claimed:null,          /* which villager is you */
+    people:{},             /* renames, restyles and folk that players have added */
     farm:{},bag:[{item:'Turnip seeds',n:6},{item:'Carrot seeds',n:4},{item:'Wood',n:8},{item:'Stone',n:4},{item:'Fibre',n:4}],
     nodes:null,built:[],placing:null,
     tool:0,cans:0,folk,standing:0,needs:[],needsDay:0,shared:[],
     px:30*TILE,py:38*TILE,scene:'world',started:false};
 }
 async function save(){try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}
-  if(NET.ready()&&Date.now()-(save._t||0)>12000){save._t=Date.now();NET.sync();}}
+  if(NET.ready()&&Date.now()-(save._t||0)>12000){save._t=Date.now();NET.sync();NET.pushPeople();}}
 async function load(){
   try{const r=await STORE.get(KEY);
     if(r&&r.value){S=JSON.parse(r.value);
       S.farm=S.farm||{};S.bag=S.bag||[];S.folk=S.folk||{};S.needs=S.needs||[];S.shared=S.shared||[];
       S.built=S.built||[];if(!S.nodes)S.nodes=buildNodes();
-      S.jobs=S.jobs||newGame().jobs;S.claimed=S.claimed||null;
+      S.jobs=S.jobs||newGame().jobs;S.claimed=S.claimed||null;S.people=S.people||{};
+      rebuildFolk();
+      FOLK.forEach(f=>{if(!S.folk[f.id])S.folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
       /* if a save predates a map change, put the player back on solid ground */
       const tx=Math.floor(S.px/TILE),ty=Math.floor(S.py/TILE);
       if(!(tx>1&&ty>1&&tx<MW-2&&ty<MH-2)){S.px=30*TILE;S.py=38*TILE;}
       FOLK.forEach(f=>{if(!S.folk[f.id])S.folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
       return;}}catch(e){}
-  S=newGame();await save();
+  S=newGame();rebuildFolk();await save();
 }
 
 
@@ -396,6 +399,20 @@ const NET={
     try{localStorage.removeItem('gh-valley');}catch(e){}},
   take(d){
     if(!d||d.error)return;
+    /* fold in anybody our neighbours have made or renamed */
+    let changed=false;
+    (d.growers||[]).forEach(g=>{
+      if(g.id===this.me)return;
+      const p=g.look&&g.look.people;
+      if(!p)return;
+      Object.keys(p).forEach(id=>{
+        const o=p[id];
+        if(!o||!o.made)return;                    /* only their own creations */
+        const cur=JSON.stringify((S.people||{})[id]||null);
+        if(cur!==JSON.stringify(o)){S.people=S.people||{};S.people[id]=o;changed=true;}
+      });
+    });
+    if(changed){rebuildFolk();save();}
     this.me=d.me||this.me;
     this.commons=d.commons||{};
     this.growers=d.growers||[];
@@ -418,7 +435,25 @@ const NET={
   async sync(){
     if(!this.ready())return;
     await this.sb.rpc('grower_sync',{p_code:this.code,p_secret:this.secret,
-      p_plot:S.farm,p_look:Object.assign({},this.look(),{claimed:S.claimed}),p_standing:S.standing});
+      p_plot:S.farm,p_look:Object.assign({},this.look(),{claimed:S.claimed,people:S.people||{},jobs:S.jobs||{}}),p_standing:S.standing});
+  },
+  async gift(to,item,qty,note){
+    const {data}=await this.sb.rpc('gift_send',{p_code:this.code,p_secret:this.secret,
+      p_to:to,p_item:item,p_qty:qty||1,p_note:note||''});
+    return !(data&&data.error);
+  },
+  async waiting(){
+    if(!this.ready())return [];
+    const {data}=await this.sb.rpc('gifts_waiting',{p_code:this.code,p_secret:this.secret});
+    return Array.isArray(data)?data:[];
+  },
+  async collect(id){
+    const {data}=await this.sb.rpc('gift_collect',{p_code:this.code,p_secret:this.secret,p_id:id});
+    return (data&&data.ok)?data:null;
+  },
+  async pushPeople(){
+    if(!this.ready())return;
+    await this.sb.rpc('people_sync',{p_code:this.code,p_secret:this.secret,p_people:S.people||{}});
   },
   async note(to,body){
     const {data}=await this.sb.rpc('note_leave',{p_code:this.code,p_secret:this.secret,p_to:to,p_body:body});
@@ -986,8 +1021,19 @@ function draw(){
 }
 
 /* ================= VILLAGER POSITIONS ================= */
+const CHILD_DOING=['off on the bike','down at the river','chalking something on a wall',
+  'trailed by three animals','asking somebody a difficult question','carrying one thing very seriously',
+  'up a tree','being a dinosaur','collecting something in a jar'];
 function folkDoing(f){
   const h=S.min/60;
+  if(f.child){
+    if(h<7)return 'not up yet';
+    if(h>=21)return 'meant to be in bed';
+    if(h>=18)return 'at the long table with everyone';
+    const own=(f.job&&f.job.length)?f.job:CHILD_DOING;
+    const slot=Math.floor((S.min-8*60)/70);
+    return own[Math.abs(slot+hashStr(f.id))%own.length];
+  }
   const c=careerById(careerOf(f.id));
   if(h<7)return 'not up yet';
   if(h>=21)return 'turning in';
@@ -1067,6 +1113,40 @@ function drawToolbar(){
 
 
 
+let FOLK=BASE_FOLK.map(f=>JSON.parse(JSON.stringify(f)));
+/* the cast is base + whatever players have changed or added, kept in the save */
+function rebuildFolk(){
+  const overlay=(S&&S.people)||{};
+  FOLK=BASE_FOLK.map(f=>JSON.parse(JSON.stringify(f)));
+  Object.keys(overlay).forEach(id=>{
+    const o=overlay[id];
+    if(o.removed){const i=FOLK.findIndex(f=>f.id===id);if(i>=0)FOLK.splice(i,1);return;}
+    const f=FOLK.find(x=>x.id===id);
+    if(f){
+      if(o.name)f.name=o.name;
+      if(o.pal)f.pal=Object.assign({},f.pal,o.pal);
+      if(o.child!==undefined)f.child=o.child||undefined;
+      if(o.household)f.household=o.household;
+      if(o.says)f.says=o.says;
+      if(o.trait)f.trait=o.trait;
+      if(o.at)f.at=o.at;
+      if(o.wasRenamed)f.wasRenamed=true;
+    }else if(o.name){
+      FOLK.push({id,name:o.name,role:o.role||'',pal:o.pal||{skin:'#E8C49B',hair:'#6B4226',shirt:'#4E8B8B',pants:'#3A3A42'},
+        at:o.at||'hall',child:o.child||undefined,household:o.household,says:o.says,trait:o.trait,
+        job:o.job||['about the place'],likes:o.likes||['Berries'],
+        intro:o.intro||"I'm about the place.",
+        lines:{work:[(o.says&&o.says.work)||'Getting on with it.'],
+               village:[(o.says&&o.says.village)||"It's a good valley."]},
+        made:o.made||null});
+    }
+  });
+}
+function edit(id,patch){
+  S.people=S.people||{};
+  S.people[id]=Object.assign({},S.people[id]||{},patch);
+  rebuildFolk();save();
+}
 /* ================= CAREERS =================
    One person to a trade. Claim one and whoever had it moves on
    to whatever is still free — and takes a new name with them,
@@ -1165,6 +1245,7 @@ function updateFolk(dt){
 }
 
 /* ================= BECOMING SOMEBODY ================= */
+function firstName(n){return String(n||'').split(' ')[0];}
 function isMe(f){return S.claimed===f.id;}
 function meFolk(){return FOLK.find(f=>f.id===S.claimed)||null;}
 function takeCareer(fid,cid){
@@ -1195,20 +1276,21 @@ function openClaim(){
     const c=g.look&&g.look.claimed;
     if(c&&g.id!==NET.me)taken.add(c);
   });
-  const rows=FOLK.map(f=>{
+  const grown=FOLK.filter(f=>!f.child&&!f.household);
+  const rows=grown.map(f=>{
     const job=careerById(careerOf(f.id));
     const mine=S.claimed===f.id;
     const gone=taken.has(f.id)&&!mine;
     return '<div class="row"><div class="who" style="display:flex;gap:10px;align-items:center;">'
       +'<canvas class="pf" data-p="'+f.id+'" width="40" height="40" style="width:38px;height:38px;image-rendering:pixelated;border:1px solid var(--line);border-radius:4px;"></canvas>'
-      +'<div><strong>'+esc(f.name)+'</strong>'+(f.child?' <span class="hint">· '+f.child+'</span>':'')
+      +'<div><strong>'+esc(firstName(f.name))+'</strong>'
       +'<div class="hint">'+(job?esc(job.name):'no trade yet')+(gone?' · already taken':'')+'</div></div></div>'
       +(mine?'<span class="hint" style="color:var(--green);">that is you</span>'
         :(gone?'<span class="hint">taken</span>'
               :'<button class="primary" data-be="'+f.id+'">Be them</button>'))+'</div>';
   }).join('');
   OR('<h3>Who are you here?</h3>'
-    +'<p class="sub">Pick somebody in the valley and they become yours — you can rename them, change how they look, and choose their trade. '
+    +'<p class="sub">Pick one of the grown folk and they become yours — you can rename them, change how they look, and choose their trade. '
     +'When you are away they carry on: working, walking, turning up to supper.</p>'
     +rows
     +'<div class="acts"><button id="newB">Somebody new</button>'
@@ -1227,11 +1309,9 @@ function openClaim(){
     const id='new'+Date.now().toString(36);
     const free=freeCareers();
     const c=free.length?free[0]:CAREERS[0];
-    FOLK.push({id,name:S.player.name||'Somebody New',role:c.name,
-      pal:{skin:S.player.skin,hair:S.player.hair,hairStyle:S.player.hairStyle,shirt:S.player.top,pants:'#3A3A42'},
-      at:c.at,job:[c.verb],likes:['Wheat','Carrot'],
-      intro:"I'm new here. Still finding my way about.",
-      lines:{work:["Getting the hang of it."],village:["Everyone's been kind so far."]}});
+    edit(id,{name:S.player.name||'Somebody New',role:c.name,at:c.at,made:NET.me||'local',
+      pal:{skin:S.player.skin,hair:S.player.hair,shirt:S.player.top,pants:'#3A3A42'},
+      job:[c.verb],likes:['Wheat','Carrot']});
     S.jobs[id]=c.id;S.claimed=id;
     save();openMe();
   };
@@ -1264,8 +1344,14 @@ function openMe(){
     +'<h3 style="font-size:14px;margin:16px 0 6px;">Your trade</h3>'
     +'<div class="hint" style="margin-bottom:8px;">One person to a trade. Take one that is free and whoever had it moves along to something else.</div>'
     +jobRows
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">What you say</h3>'
+    +'<div class="hint" style="margin-bottom:6px;">Two lines in your own voice. Neighbours hear these when they stop to talk.</div>'
+    +'<input type="text" id="sw" maxlength="120" placeholder="about your work…" value="'+esc((f.says&&f.says.work)||'')+'" '
+    +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);padding:8px 10px;border-radius:4px;font-size:13px;margin-bottom:6px;"/>'
+    +'<input type="text" id="sv" maxlength="120" placeholder="about the valley…" value="'+esc((f.says&&f.says.village)||'')+'" '
+    +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);padding:8px 10px;border-radius:4px;font-size:13px;"/>'
     +'<h3 style="font-size:14px;margin:16px 0 6px;">Your household</h3>'
-    +(kin.length?kin.map(k=>'<div class="row"><div><strong>'+esc(k.name)+'</strong><div class="hint">'+(k.child?('age '+k.child):'lives with you')+'</div></div>'
+    +(kin.length?kin.map(k=>'<div class="row"><div><strong>'+esc(firstName(k.name))+'</strong><div class="hint">'+(k.child?('age '+k.child):'grown, lives with you')+'</div></div>'
         +'<button data-kin="'+k.id+'">Edit</button></div>').join('')
       :'<div class="hint">Nobody yet.</div>')
     +'<div class="acts" style="margin-bottom:10px;"><button id="addKin">Add somebody</button></div>'
@@ -1284,7 +1370,7 @@ function openMe(){
       +row('Top','shirt')+row('Hat','hat');
     el.querySelectorAll('[data-cyc]').forEach(b=>b.onclick=()=>{
       cycleLook(f.pal,b.dataset.cyc,parseInt(b.dataset.d));
-      save();paint();labels();
+      edit(f.id,{pal:f.pal});paint();labels();
     });
     labels();
   };
@@ -1296,20 +1382,24 @@ function openMe(){
     set('hat',f.pal.hat?({witch:'Witch hat',beret:'Beret'})[f.pal.hat]||f.pal.hat:'None');
   };
   paint();looks();
-  document.getElementById('nm').oninput=e=>{f.name=e.target.value.slice(0,24)||'Somebody';save();};
+  document.getElementById('nm').oninput=e=>{edit(f.id,{name:e.target.value.slice(0,24)||'Somebody'});};
   document.querySelectorAll('[data-job]').forEach(b=>b.onclick=()=>{
     const moved=takeCareer(f.id,b.dataset.job);
     if(moved)toast(moved.name+' has taken up something else.');
     openMe();
   });
+  const saySave=()=>{
+    const w=document.getElementById('sw'),v=document.getElementById('sv');
+    edit(f.id,{says:{work:w?w.value.slice(0,120):'',village:v?v.value.slice(0,120):''}});
+  };
+  const sw=document.getElementById('sw'),sv=document.getElementById('sv');
+  if(sw)sw.onchange=saySave; if(sv)sv.onchange=saySave;
   document.getElementById('addKin').onclick=()=>{
     const id='kin'+Date.now().toString(36);
-    FOLK.push({id,name:'New face',role:'lives with '+f.name.split(' ')[0],household:f.id,
+    edit(id,{name:'New face',role:'lives with '+firstName(f.name),household:f.id,made:NET.me||'local',
       pal:{skin:f.pal.skin,hair:f.pal.hair,shirt:'#8C6A9C',pants:'#3A3A42'},
-      at:f.at,job:['about the place'],likes:['Berries'],
-      intro:"I'm with "+f.name.split(' ')[0]+".",
-      lines:{work:["Helping. Sort of."],village:["It's a good valley."]}});
-    save();openMe();
+      at:f.at,child:8,job:['about the place'],likes:['Berries']});
+    openMe();
   };
   document.querySelectorAll('[data-kin]').forEach(b=>b.onclick=()=>openKin(b.dataset.kin));
   document.getElementById('swapB').onclick=openClaim;
@@ -1319,7 +1409,7 @@ function openKin(id){
   paused=true;
   const k=FOLK.find(x=>x.id===id);
   if(!k){openMe();return;}
-  OR('<h3>'+esc(k.name)+'</h3>'
+  OR('<h3>'+esc(firstName(k.name))+'</h3>'
     +'<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:10px;">'
     +'<canvas id="kp" width="64" height="64" style="width:70px;height:70px;image-rendering:pixelated;border:1px solid var(--line);border-radius:5px;"></canvas>'
     +'<input type="text" id="kn" maxlength="24" value="'+esc(k.name)+'" '
@@ -1327,7 +1417,7 @@ function openKin(id){
     +'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">'
     +'<span style="font-size:12px;color:var(--dim);min-width:74px;">Age</span>'
     +'<button data-age="-1" style="padding:4px 10px;">◀</button>'
-    +'<span id="ageV" style="flex:1;text-align:center;font-size:12px;">'+(k.child||'grown')+'</span>'
+    +'<span id="ageV" style="flex:1;text-align:center;font-size:12px;">'+(k.child?('age '+k.child):'grown')+'</span>'
     +'<button data-age="1" style="padding:4px 10px;">▶</button></div>'
     +'<div id="klooks"></div>'
     +'<div class="acts"><button id="delB" style="border-color:var(--rose);color:var(--rose);">Remove</button>'
@@ -1340,20 +1430,20 @@ function openKin(id){
     +'<button data-c="'+field+'" data-d="-1" style="padding:4px 10px;">◀</button>'
     +'<span style="flex:1;"></span><button data-c="'+field+'" data-d="1" style="padding:4px 10px;">▶</button></div>';
   el.innerHTML=row('Skin','skin')+row('Hair','hair')+row('Hair style','hairStyle')+row('Top','shirt');
-  el.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{cycleLook(k.pal,b.dataset.c,parseInt(b.dataset.d));save();paint();});
+  el.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{cycleLook(k.pal,b.dataset.c,parseInt(b.dataset.d));edit(k.id,{pal:k.pal});paint();});
   paint();
-  document.getElementById('kn').oninput=e=>{k.name=e.target.value.slice(0,24)||'Somebody';save();};
+  document.getElementById('kn').oninput=e=>{edit(k.id,{name:e.target.value.slice(0,24)||'Somebody'});};
   document.querySelectorAll('[data-age]').forEach(b=>b.onclick=()=>{
     const ages=[false,4,6,8,10,12,14,16];
     let i=ages.indexOf(k.child||false);if(i<0)i=0;
     i=(i+parseInt(b.dataset.age)+ages.length)%ages.length;
-    k.child=ages[i]||undefined;
-    document.getElementById('ageV').innerText=k.child||'grown';
-    save();paint();
+    edit(k.id,{child:ages[i]||null});
+    const kk=FOLK.find(x=>x.id===id)||k;k.child=kk.child;
+    document.getElementById('ageV').innerText=k.child?('age '+k.child):'grown';
+    paint();
   });
   document.getElementById('delB').onclick=()=>{
-    const i=FOLK.findIndex(x=>x.id===id);if(i>=0)FOLK.splice(i,1);
-    delete FS[id];save();openMe();
+    edit(id,{removed:true});delete FS[id];openMe();
   };
   document.getElementById('backB').onclick=openMe;
 }
@@ -1706,7 +1796,8 @@ function openTalk(f){
   const body=(msgs)=>{
     OR('<div style="display:flex;gap:12px;align-items:flex-start;">'
       +'<canvas id="pc" width="64" height="64" style="width:76px;height:76px;image-rendering:pixelated;border:1px solid var(--line);border-radius:5px;flex-shrink:0;"></canvas>'
-      +'<div style="flex:1;"><h3>'+f.name+'</h3><div class="hint">'+f.role+' · '+friendWord(d.friend)+'</div></div></div>'
+      +'<div style="flex:1;"><h3>'+esc(firstName(f.name))+'</h3><div class="hint">'
+      +esc((careerById(careerOf(f.id))||{}).name||f.role||'')+' · '+friendWord(d.friend)+'</div></div></div>'
       +'<div class="chat" id="ch">'+msgs+'</div>'
       +'<div id="tp"></div>'
       +'<div class="acts"><button id="giveB">Give something</button><button class="primary" id="closeB">Goodbye</button></div>');
@@ -1727,8 +1818,9 @@ function openTalk(f){
     const t=TOPICS.find(x=>x.id===tid);
     d.asked.push(tid);
     d.friend=Math.min(20,d.friend+1);
-    const pool=f.lines[tid];
-    const say=pool[hashStr(f.id+tid+S.day+S.runId)%pool.length];
+    const own=f.says&&f.says[tid];
+    const pool=(f.lines&&f.lines[tid])||['Mm.'];
+    const say=(own&&own.trim())?own:pool[hashStr(f.id+tid+S.day+S.runId)%pool.length];
     log+='<div class="bub me">'+esc(t.q)+'</div><div class="bub them">'+esc(say)+'</div>';
     save();body(log);
     const c=document.getElementById('ch');if(c)c.scrollTop=c.scrollHeight;
@@ -1870,6 +1962,12 @@ async function openVisit(id){
     +(dry?('<div class="card"><strong>Their rows are dry</strong>'
         +'<div class="hint" style="margin-bottom:8px;">You could water them. They will find it done when they get back.</div>'
         +'<button class="primary" id="wat">Water '+dry+' rows for them</button></div>'):'')
+    +'<h3 style="font-size:14px;margin:14px 0 6px;">Leave them something</h3>'
+    +'<div class="hint" style="margin-bottom:6px;">Out of your own basket. They will find it when they next come by.</div>'
+    +'<div class="grid" id="giftGrid">'
+    +(S.bag.filter(b=>b.n>0).map(b=>'<div class="cell" data-gift="'+esc(b.item)+'"><div class="n">'+esc(b.item)+'</div><div class="c">'+b.n+'</div></div>').join('')
+      ||'<div class="hint">Your basket is empty.</div>')
+    +'</div>'
     +'<h3 style="font-size:14px;margin:14px 0 6px;">Leave a note on the gate</h3>'
     +'<input type="text" id="nb" maxlength="240" placeholder="Watered your beans. — '+esc(S.player.name||'a neighbour')+'" '
     +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);padding:10px 12px;border-radius:4px;font-size:14px;"/>'
@@ -1882,6 +1980,15 @@ async function openVisit(id){
     toast(n?('Watered '+n+' rows for '+g.handle):'Nothing needed doing');
     S.standing+=n;save();openVisit(id);
   };
+  document.querySelectorAll('[data-gift]').forEach(c=>c.onclick=async()=>{
+    const item=c.dataset.gift;
+    if(!bagTake(item,1))return;
+    const ok=await NET.gift(id,item,1,'');
+    if(!ok){bagAdd(item,1);toast('It would not go.');return;}
+    S.standing+=2;await save();
+    toast('Left '+item+' for '+g.handle);
+    openVisit(id);
+  });
   document.getElementById('noteB').onclick=async()=>{
     const t=document.getElementById('nb').value.trim();if(!t)return;
     const ok=await NET.note(id,t);
@@ -1902,7 +2009,7 @@ function openMenu(){
                  :'Playing on your own. You can share a valley with friends — they just need a code.')
     +'</div></div>'
     +'<div class="card"><strong>You</strong><div class="hint">'
-    +(S.claimed?(esc((meFolk()||{}).name||'')+' — '+esc((careerById(careerOf(S.claimed))||{}).name||'no trade')):'You have not settled on anybody yet.')
+    +(S.claimed?(esc(firstName((meFolk()||{}).name))+' — '+esc((careerById(careerOf(S.claimed))||{}).name||'no trade')):'You have not settled on anybody yet.')
     +'</div></div>'
     +'<div class="acts" style="margin-bottom:10px;"><button class="primary" id="meB">'+(S.claimed?'Change who you are':'Choose who you are')+'</button></div>'
     +'<div class="acts" style="margin-bottom:10px;"><button class="primary" id="valB">'+(NET.ready()?'Your valley':'Play with friends')+'</button></div>'
@@ -1927,6 +2034,17 @@ async function morningYield(){
   });
   return out;
 }
+async function checkGifts(){
+  if(!NET.ready())return;
+  const list=await NET.waiting();
+  if(!list.length)return;
+  for(const g of list){
+    const got=await NET.collect(g.id);
+    if(got){bagAdd(got.item,got.qty);
+      toast(g.from+' left you '+got.qty+' × '+got.item+(g.note?(' — "'+g.note+'"'):''));}
+  }
+  await save();
+}
 async function doSleep(){
   paused=true;
   const grew=[];
@@ -1936,6 +2054,7 @@ async function doSleep(){
     p.wet=false;
   });
   S.day++;S.min=DAY_START;S.stam=STAMINA;
+  checkGifts();
   const got=morningYield();
   if(got.length)setTimeout(()=>toast('Morning — '+got.join(' and ')+' collected'),1200);S.cans=Math.max(S.cans,0);
   S.needs=[];S.needsDay=0;
