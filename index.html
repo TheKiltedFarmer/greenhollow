@@ -136,11 +136,22 @@ const TREES=[];   /* every tree in the valley is now a resource node you can fel
 
 /* ================= CROPS ================= */
 const CROPS={
-  turnip:{name:'Turnip',seed:'Turnip seeds',days:4,colour:'#D8CFE0',leaf:'#5E8B4E'},
-  carrot:{name:'Carrot',seed:'Carrot seeds',days:5,colour:'#E08A3C',leaf:'#4E8B4E'},
-  wheat :{name:'Wheat', seed:'Wheat seeds', days:5,colour:'#E0C46A',leaf:'#A8944E'},
-  tomato:{name:'Tomato',seed:'Tomato seeds',days:6,colour:'#C4493C',leaf:'#4E7A46',regrow:2},
-  pumpkin:{name:'Pumpkin',seed:'Pumpkin seeds',days:8,colour:'#E07A2D',leaf:'#4E7A46'},
+  turnip :{name:'Turnip', seed:'Turnip seeds', days:4,colour:'#D8CFE0',leaf:'#5E8B4E',seasons:['spring','autumn']},
+  carrot :{name:'Carrot', seed:'Carrot seeds', days:5,colour:'#E08A3C',leaf:'#4E8B4E',seasons:['spring','autumn']},
+  pea    :{name:'Peas',   seed:'Pea seeds',    days:4,colour:'#8FBF5C',leaf:'#4E8B46',seasons:['spring'],regrow:2},
+  onion  :{name:'Onion',  seed:'Onion seeds',  days:5,colour:'#C9A4B8',leaf:'#5E9C4E',seasons:['spring','summer']},
+  wheat  :{name:'Wheat',  seed:'Wheat seeds',  days:6,colour:'#E0C46A',leaf:'#A8944E',seasons:['summer','autumn']},
+  tomato :{name:'Tomato', seed:'Tomato seeds', days:6,colour:'#C4493C',leaf:'#4E7A46',seasons:['summer'],regrow:2},
+  bean   :{name:'Beans',  seed:'Bean seeds',   days:5,colour:'#9CBF6C',leaf:'#4E8B46',seasons:['summer'],regrow:3},
+  corn   :{name:'Corn',   seed:'Corn seeds',   days:7,colour:'#E0C46A',leaf:'#5E9C4E',seasons:['summer','autumn'],regrow:3},
+  pumpkin:{name:'Pumpkin',seed:'Pumpkin seeds',days:8,colour:'#E07A2D',leaf:'#4E7A46',seasons:['autumn']},
+  beet   :{name:'Beet',   seed:'Beet seeds',   days:5,colour:'#8C2F5A',leaf:'#5E8B4E',seasons:['autumn']},
+  kale   :{name:'Kale',   seed:'Kale seeds',   days:5,colour:'#4E7A46',leaf:'#3E6A3A',seasons:['autumn','winter']},
+  leek   :{name:'Leek',   seed:'Leek seeds',   days:6,colour:'#BFD8A0',leaf:'#4E8B4E',seasons:['winter','spring']},
+  garlic :{name:'Garlic', seed:'Garlic seeds', days:6,colour:'#EDE6D6',leaf:'#6FA85C',seasons:['winter','spring']},
+  sage   :{name:'Sage',   seed:'Sage seeds',   days:4,colour:'#A8BCA0',leaf:'#6E8C6A',seasons:['spring','summer','autumn'],herb:true},
+  mint   :{name:'Mint',   seed:'Mint seeds',   days:3,colour:'#7FC49B',leaf:'#4E9C6A',seasons:['spring','summer'],herb:true,regrow:2},
+  thyme  :{name:'Thyme',  seed:'Thyme seeds',  days:4,colour:'#9CAF8C',leaf:'#5E8B5A',seasons:['summer','autumn'],herb:true},
 };
 const SEED_OF={};Object.keys(CROPS).forEach(k=>SEED_OF[CROPS[k].seed]=k);
 
@@ -310,9 +321,10 @@ function newGame(){
           conrad:'cook'},
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
+    delve:null, reports:[], stock:{},
     farm:{},bag:[{item:'Turnip seeds',n:6},{item:'Carrot seeds',n:4},{item:'Wood',n:8},{item:'Stone',n:4},{item:'Fibre',n:4}],
     nodes:null,built:[],placing:null,
-    tool:0,cans:0,folk,standing:0,needs:[],needsDay:0,shared:[],
+    tool:0,cans:0,kit:{hoe:0,axe:0,pick:0,can:0},folk,standing:0,needs:[],needsDay:0,shared:[],
     px:30*TILE,py:38*TILE,scene:'world',started:false};
 }
 async function save(){try{await STORE.set(KEY,JSON.stringify(S));}catch(e){}
@@ -322,6 +334,7 @@ async function load(){
     if(r&&r.value){S=JSON.parse(r.value);
       S.farm=S.farm||{};S.bag=S.bag||[];S.folk=S.folk||{};S.needs=S.needs||[];S.shared=S.shared||[];
       S.built=S.built||[];if(!S.nodes)S.nodes=buildNodes();
+      S.kit=S.kit||{hoe:0,axe:0,pick:0,can:0};S.stock=S.stock||{};S.reports=S.reports||[];
       S.jobs=S.jobs||newGame().jobs;S.claimed=S.claimed||null;S.people=S.people||{};
       rebuildFolk();
       FOLK.forEach(f=>{if(!S.folk[f.id])S.folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
@@ -479,6 +492,24 @@ function neighbourDoing(g){
   return jobs[seed%jobs.length];
 }
 
+
+/* ================= THE YEAR ================= */
+const SEASON_DAYS=14;
+const SEASONS=[
+  {id:'spring',name:'Spring',tint:'rgba(120,200,120,0.05)',note:'Everything wants to grow.'},
+  {id:'summer',name:'Summer',tint:'rgba(255,220,120,0.06)',note:'Long days, hard ground.'},
+  {id:'autumn',name:'Autumn',tint:'rgba(220,150,80,0.07)',note:'Bring it in before the wet.'},
+  {id:'winter',name:'Winter',tint:'rgba(150,190,230,0.10)',note:'Little grows. Mind the stores.'},
+];
+function seasonIdx(){return Math.floor(((S.day-1)%(SEASON_DAYS*4))/SEASON_DAYS);}
+function season(){return SEASONS[seasonIdx()];}
+function seasonDay(){return ((S.day-1)%SEASON_DAYS)+1;}
+function yearOf(){return 1+Math.floor((S.day-1)/(SEASON_DAYS*4));}
+function inSeason(cropKey){
+  const c=CROPS[cropKey];
+  if(!c||!c.seasons)return true;
+  return c.seasons.indexOf(season().id)>=0;
+}
 /* ================= WILD RESOURCES ================= */
 const NODEKIND={
   tree :{item:'Wood',   n:3, stam:2, regrow:4, tool:'axe',  label:'Fell the tree'},
@@ -487,6 +518,7 @@ const NODEKIND={
   clay :{item:'Clay',   n:2, stam:1, regrow:3, tool:'pick', label:'Dig the clay'},
   reed :{item:'Fibre',  n:2, stam:1, regrow:2, tool:'hand', label:'Cut the reeds'},
   bush :{item:'Berries',n:2, stam:1, regrow:2, tool:'hand', label:'Pick the berries'},
+  vein :{item:'Ore',    n:2, stam:2, regrow:6, tool:'pick', label:'Work the seam'},
 };
 function buildNodes(){
   const out={};
@@ -508,9 +540,9 @@ function buildNodes(){
     const r=srand(hashStr('nk'+i+'.'+x+'.'+y));
     let k;
     if(y<18)      k = r<0.62?'tree':(r<0.82?'stump':'bush');
-    else if(y>72) k = r<0.55?'rock':(r<0.78?'clay':'stump');
+    else if(y>72) k = r<0.4?'rock':(r<0.62?'vein':(r<0.82?'clay':'stump'));
     else if(x>86) k = r<0.5 ?'reed':(r<0.75?'clay':'bush');
-    else if(x<20) k = r<0.5 ?'rock':(r<0.75?'tree':'stump');
+    else if(x<20) k = r<0.38?'rock':(r<0.56?'vein':(r<0.8?'tree':'stump'));
     else          k = r<0.45?'tree':(r<0.7?'bush':(r<0.88?'reed':'rock'));
     out[x+','+y]={k,cut:0};
   }
@@ -519,6 +551,7 @@ function buildNodes(){
               [FARM.x+FARM.w+2,FARM.y+3],[FARM.x+FARM.w+3,FARM.y+8],[FARM.x+FARM.w+2,FARM.y+13],
               [FARM.x+4,FARM.y-3],[FARM.x+9,FARM.y-4],[FARM.x+15,FARM.y-3],
               [FARM.x+5,FARM.y+FARM.h+3],[FARM.x+12,FARM.y+FARM.h+2],[FARM.x+18,FARM.y+FARM.h+4]];
+  for(let y=DOOR.y-2;y<=DOOR.y+2;y++)for(let x=DOOR.x-2;x<=DOOR.x+2;x++)delete out[x+','+y];
   near.forEach((p,i)=>{
     const k=['tree','tree','tree','stump','rock','rock','bush','reed','clay'][i%9];
     for(let d=0;d<3;d++){
@@ -586,6 +619,7 @@ function buildCollision(){
     const [x,y]=k.split(',').map(Number);blk(x,y);
   });
   if(S&&S.built)S.built.forEach(b=>{for(let y=b.y;y<b.y+b.h;y++)for(let x=b.x;x<b.x+b.w;x++)blk(x,y);});
+  blk(DOOR.x,DOOR.y);
   Object.values(BLD).forEach(b=>{for(let y=b.y;y<b.y+b.h;y++)for(let x=b.x;x<b.x+b.w;x++)blk(x,y);});
   TREES.forEach(([x,y])=>blk(x,y));
   blk(WELL.x,WELL.y);blk(TABLE.x,TABLE.y);
@@ -732,6 +766,16 @@ function drawIcon(g,label,S3){
     const P2=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x*S3,y*S3,w*S3,h*S3);};
     if(label==='Clay'){P2(2,8,12,6,'#8C5A42');P2(2,8,12,2,'#A06A4E');P2(5,10,4,2,'rgba(0,0,0,0.15)');return;}
     if(label==='Fibre'){for(let i=0;i<4;i++)P2(3+i*3,4,2,9,'#C9A45E');P2(2,7,12,2,'#8C6A3C');return;}
+    if(label==='Ore'){g.fillStyle='#6E6A72';g.beginPath();g.ellipse(8*S3,10*S3,5*S3,4*S3,0,0,7);g.fill();
+      P2(5,8,2,2,'#C9A44E');P2(9,11,2,2,'#C9A44E');P2(10,7,2,2,'#C9A44E');return;}
+    if(label==='Iron'){P2(2,7,12,5,'#B8BCC4');P2(2,7,12,2,'#DDE2E8');P2(2,11,12,1,'#8A8E96');return;}
+    if(label==='Brick'){P2(2,6,12,4,'#A8563C');P2(2,10,12,4,'#944A34');P2(7,6,1,4,'rgba(0,0,0,0.25)');
+      P2(4,10,1,4,'rgba(0,0,0,0.25)');P2(11,10,1,4,'rgba(0,0,0,0.25)');return;}
+    if(label==='Plank'){P2(2,5,12,3,'#B8944E');P2(2,9,12,3,'#A8844A');P2(2,5,12,1,'#C9A45E');return;}
+    if(label==='Cloth'){P2(3,4,10,9,'#C4A4B8');P2(3,4,10,2,'#D8BCCC');
+      for(let i=0;i<3;i++)P2(3,7+i*2,10,1,'rgba(0,0,0,0.10)');return;}
+    if(label==='Flour'){P2(4,5,8,9,'#EDE6D6');P2(4,5,8,2,'#D8D0BC');P2(6,8,4,3,'rgba(0,0,0,0.08)');return;}
+    if(label==='Rope'){for(let i=0;i<4;i++)P2(3,4+i*2,10,1,'#C9A45E');P2(3,4,1,9,'#A8844A');P2(12,4,1,9,'#A8844A');return;}
     if(label==='Feed'){P2(3,5,10,9,'#8C6A42');P2(3,5,10,2,'#A8844A');
       P2(5,9,2,2,'#E0C46A');P2(9,10,2,2,'#E0C46A');P2(7,12,2,2,'#C9A44E');return;}
     if(label==='Egg'){g.fillStyle='#EDE6D6';g.beginPath();g.ellipse(8*S3,9*S3,3.6*S3,4.6*S3,0,0,7);g.fill();
@@ -767,7 +811,7 @@ function drawToolIcon(g,id,S3){
     O(11,7,4,2);P(11,7,4,2,'#5E7E86');
     P(13,8,2,4,'#5E7E86');P(14,11,2,1,'#7FA0A8');
     O(4,3,5,3);P(4,3,5,3,'#5E7E86');
-    const lvl=Math.max(0,Math.min(1,S?S.cans/8:0));
+    const lvl=Math.max(0,Math.min(1,S?S.cans/((typeof canCap==='function')?canCap():8):0));
     if(lvl>0)P(3,13-Math.round(6*lvl),7,Math.round(6*lvl),'#4EA8C4');
     P(3,7,3,2,'rgba(255,255,255,0.25)');
   }else if(id==='seed'){
@@ -794,6 +838,8 @@ function drawToolIcon(g,id,S3){
 /* ================= RENDER ================= */
 function skyTint(){
   const h=S.min/60;
+  const s=season();
+  if(s&&s.id==='winter'&&h>=8&&h<17)return s.tint;
   if(h<8)return'rgba(255,180,90,0.10)';
   if(h<17)return'rgba(255,255,220,0.02)';
   if(h<20)return'rgba(255,140,60,0.10)';
@@ -855,6 +901,23 @@ function draw(){
   ctx.fillText('the table',tx+16,ty+2);
   /* depth-sorted buildings, trees, folk, player */
   const layer=[];
+  /* the door in the hillside */
+  {
+    const dx=DOOR.x*TILE,dy=DOOR.y*TILE;
+    layer.push({y:dy+30,f:()=>{
+      ctx.fillStyle='#3A3630';ctx.fillRect(dx-10,dy-6,52,38);
+      ctx.fillStyle='#2A2620';ctx.fillRect(dx-6,dy-2,44,32);
+      ctx.fillStyle='#14100E';ctx.fillRect(dx+4,dy+2,24,28);
+      ctx.fillStyle='#5A4632';ctx.fillRect(dx+6,dy+4,20,26);
+      ctx.fillStyle='#3A2C1E';ctx.fillRect(dx+6,dy+4,20,2);
+      ctx.fillStyle='#C9A44E';ctx.fillRect(dx+21,dy+17,3,3);
+      const gl=ctx.createRadialGradient(dx+16,dy+16,3,dx+16,dy+16,46);
+      gl.addColorStop(0,'rgba(224,140,60,0.16)');gl.addColorStop(1,'rgba(224,140,60,0)');
+      ctx.fillStyle=gl;ctx.fillRect(dx-40,dy-40,116,116);
+      ctx.fillStyle='rgba(237,230,214,0.5)';ctx.font='9px Inter';ctx.textAlign='center';
+      ctx.fillText('a door',dx+16,dy-12);
+    }});
+  }
   /* wild resources */
   if(S.nodes)for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
     const nd=S.nodes[x+','+y];
@@ -1484,8 +1547,35 @@ function nearest(){
   if(dt<bd){bd=dt;best={type:'table'};}
   const db=Math.hypot(BLD.hall.door.x*TILE-S.px,(BLD.hall.door.y)*TILE-S.py);
   if(db<bd){bd=db;best={type:'board'};}
+  const dd=Math.hypot(DOOR.x*TILE-S.px,DOOR.y*TILE-S.py);
+  if(dd<bd){bd=dd;best={type:'door'};}
+  /* the river runs down the east side */
+  if(Math.floor(S.px/TILE)>=RIVER_X-3){
+    const dr=Math.abs(S.px/TILE-(RIVER_X-1))*TILE;
+    if(dr<bd){bd=dr;best={type:'fish'};}
+  }
+  /* the treeline, north of everything */
+  if(Math.floor(S.py/TILE)<14){
+    const dh=Math.abs(S.py/TILE-12)*TILE;
+    if(dh<bd){bd=dh;best={type:'hunt'};}
+  }
+  ['kitchen','hall'].forEach(id=>{
+    const b=BLD[id];if(!b)return;
+    const dq=Math.hypot(b.door.x*TILE-S.px,(b.door.y)*TILE-S.py);
+    if(dq<bd){bd=dq;best={type:'craft',at:id};}
+  });
+  const bn=(S.built||[]).find(b=>['coop','goatpen','barn'].includes(b.id));
+  if(bn){
+    const dsk=Math.hypot((bn.x+bn.w/2)*TILE-S.px,(bn.y+bn.h)*TILE-S.py);
+    if(dsk<bd){bd=dsk;best={type:'stock'};}
+  }
   const ds=Math.hypot(BLD.supply.door.x*TILE-S.px,(BLD.supply.door.y)*TILE-S.py);
   if(ds<bd){bd=ds;best={type:'supply'};}
+  ['forge','seedhouse'].forEach(id=>{
+    const b=BLD[id];if(!b)return;
+    const d=Math.hypot(b.door.x*TILE-S.px,(b.door.y)*TILE-S.py);
+    if(d<bd){bd=d;best={type:'craft',at:id};}
+  });
   const dh=Math.hypot(BLD.home.door.x*TILE-S.px,(BLD.home.door.y)*TILE-S.py);
   if(dh<bd){bd=dh;best={type:'bed'};}
   return best;
@@ -1498,6 +1588,14 @@ function hintText(){
     if(n.type==='table')return 'The sharing table  (E)';
     if(n.type==='board')return 'The needs board  (E)';
     if(n.type==='supply')return 'The Supply House  (E)';
+    if(n.type==='door')return 'A door in the hillside  (E)';
+    if(n.type==='fish')return 'Fish the river  (E)';
+    if(n.type==='hunt')return 'Take the gun to the treeline  (E)';
+    if(n.type==='stock')return 'See to the animals  (E)';
+    if(n.type==='craft')return ({forge:'The forge — smelt and mend  (E)',
+      seedhouse:'The workroom — mill and weave  (E)',
+      kitchen:'The long kitchen — cook  (E)',
+      hall:'The hall — remedies  (E)'})[n.at]||'Work here  (E)';
     if(n.type==='bed')return 'Turn in for the night  (E)';
   }
   const t=facingTile();const tool=curTool();
@@ -1514,8 +1612,27 @@ function hintText(){
   if(tool.id==='hoe')return p&&p.till?'':'Till the soil  (E)';
   if(tool.id==='can')return (p&&p.till&&!p.wet)?(S.cans>0?'Water  (E)':'Can is empty'):'';
   if(tool.id==='seed'){const s=selectedSeed();
-    return (p&&p.till&&!p.crop&&s)?('Plant '+s+'  (E)'):'';}
+    if(!(p&&p.till&&!p.crop&&s))return '';
+    return inSeason(SEED_OF[s])?('Plant '+s+'  (E)'):(CROPS[SEED_OF[s]].name+' is out of season');}
   return '';
+}
+const EATS={Bread:4,Cheese:5,Stew:9,Remedy:6,Salve:8,Berries:2,Egg:3,Milk:2,Butter:3};
+function openEat(){
+  paused=true;
+  const rows=S.bag.filter(b=>b.n>0&&EATS[b.item])
+    .map(b=>'<div class="row"><div><strong>'+esc(b.item)+'</strong><div class="hint">+'+EATS[b.item]+' puff · you have '+b.n+'</div></div>'
+      +'<button class="primary" data-eat="'+esc(b.item)+'">Eat</button></div>').join('')
+    ||'<div class="hint">Nothing worth eating. The kitchen turns crops into suppers.</div>';
+  OR('<h3>Something to eat</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">You have '+S.stam+' of '+STAMINA+'.</div>'+rows
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-eat]').forEach(b=>b.onclick=async()=>{
+    const it=b.dataset.eat;
+    if(!bagTake(it,1))return;
+    S.stam=Math.min(STAMINA,S.stam+EATS[it]);
+    await save();updateHud();toast(it+' — that helps.');openEat();
+  });
+  document.getElementById('closeB').onclick=close;
 }
 function spend(n){
   if(S.stam<n){toast('Too tired. Sleep to recover.');return false;}
@@ -1525,10 +1642,15 @@ function interact(){
   const n=nearest();
   if(n){
     if(n.type==='folk')return openTalk(n.f);
-    if(n.type==='well'){S.cans=8;drawToolbar();toast('Watering can filled');save();return;}
+    if(n.type==='well'){S.cans=canCap();drawToolbar();toast('Watering can filled');save();return;}
     if(n.type==='table')return openTable();
     if(n.type==='board')return openBoard();
     if(n.type==='supply')return openSupply();
+    if(n.type==='door')return openDoor();
+    if(n.type==='fish')return openFish();
+    if(n.type==='hunt')return openHunt();
+    if(n.type==='stock')return openStock();
+    if(n.type==='craft')return openCraft(n.at);
     if(n.type==='bed')return doSleep();
   }
   const t=facingTile(),tool=curTool();
@@ -1536,8 +1658,8 @@ function interact(){
   if(nd){
     const K=NODEKIND[nd.k];
     if(K.tool!=='hand'&&tool.id!==K.tool){toast('You need the '+(K.tool==='axe'?'axe':'pick')+' for that.');return;}
-    if(!spend(K.stam))return;
-    const got=K.n+(hashStr('g'+t.x+t.y+S.day)%2);
+    if(!spend(toolStam(K.tool,K.stam)))return;
+    const got=K.n+(hashStr('g'+t.x+t.y+S.day)%2)+toolBonus(K.tool);
     bagAdd(K.item,got);
     nd.cut=S.day+K.regrow;
     toast('+'+got+' '+K.item);
@@ -1570,6 +1692,12 @@ function interact(){
   if(tool.id==='seed'){
     const s=selectedSeed();
     if(!s||!p||!p.till||p.crop)return;
+    const ck=SEED_OF[s];
+    if(!inSeason(ck)){
+      const c=CROPS[ck];
+      toast(c.name+' will not take in '+season().name.toLowerCase()+' — try '+c.seasons.join(' or '));
+      return;
+    }
     if(!spend(1))return;
     if(!bagTake(s,1))return;
     p.crop=SEED_OF[s];p.stage=0;
@@ -1578,6 +1706,650 @@ function interact(){
 }
 
 
+
+/* ================= REFINING & KIT =================
+   Two steps, never more: what you dig up, what it becomes,
+   and what you make from that.                              */
+const REFINE=[
+  {id:'ingot', at:'forge',     name:'Smelt iron',   into:'Iron',   n:1, cost:{Ore:2,Wood:1},    career:'smith',    hint:'Ore and a good fire.'},
+  {id:'brick', at:'forge',     name:'Fire bricks',  into:'Brick',  n:2, cost:{Clay:3,Wood:1},   career:'potter',   hint:'Riverbank clay, baked hard.'},
+  {id:'plank', at:'forge',     name:'Saw planks',   into:'Plank',  n:2, cost:{Wood:3},          career:'carpenter',hint:'Rough timber into something square.'},
+  {id:'cloth', at:'seedhouse', name:'Weave cloth',  into:'Cloth',  n:1, cost:{Fibre:3},         career:'weaver',   hint:'Reed fibre on the loom.'},
+  {id:'flour', at:'seedhouse', name:'Grind flour',  into:'Flour',  n:2, cost:{Wheat:2},         career:'miller',   hint:'The wheel does the work.'},
+  {id:'rope',  at:'seedhouse', name:'Twist rope',   into:'Rope',   n:1, cost:{Fibre:2,Cloth:1}, career:'weaver',   hint:'Stronger than it looks.'},
+  {id:'yarn',  at:'seedhouse', name:'Spin wool',    into:'Yarn',   n:2, cost:{Wool:2},          career:'weaver',   hint:'Off the sheep and onto the wheel.'},
+  {id:'wcloth',at:'seedhouse', name:'Weave woollen',into:'Cloth',  n:2, cost:{Yarn:2},          career:'weaver',   hint:'Warmer than the reed stuff.'},
+  {id:'feed',  at:'seedhouse', name:'Mill feed',    into:'Feed',   n:4, cost:{Wheat:2},         career:'miller',   hint:'What the animals actually want.'},
+  {id:'cheese',at:'kitchen',   name:'Press cheese', into:'Cheese', n:1, cost:{Milk:3},          career:'cook',     hint:'Milk, salt, and a fortnight of patience.'},
+  {id:'butter',at:'kitchen',   name:'Churn butter', into:'Butter', n:1, cost:{Milk:2},          career:'cook',     hint:'Arm-aching work.'},
+  {id:'bread', at:'kitchen',   name:'Bake bread',   into:'Bread',  n:3, cost:{Flour:2},         career:'baker',    hint:'The free shelf will not fill itself.'},
+  {id:'remedy',at:'hall',      name:'Make a remedy',into:'Remedy', n:2, cost:{Sage:1,Mint:1},   career:'healer',   hint:'Bitter, and it works.'},
+  {id:'salve', at:'hall',      name:'Boil a salve', into:'Salve',  n:1, cost:{Thyme:2,Butter:1},career:'healer',   hint:'For hands that have been in the deep.'},
+  {id:'stew',  at:'kitchen',   name:'Set a stew on', into:'Stew',  n:3, cost:{Meat:2,Carrot:1,Onion:1},career:'cook',hint:'Feeds whoever turns up.'},
+  {id:'leather',at:'forge',    name:'Tan leather',  into:'Leather',n:1, cost:{Hide:2,Sage:1},   career:'carpenter',hint:'Slow, and it smells.'},
+];
+/* what your kit can become. tier 0 is what everyone starts with */
+const KIT={
+  hoe :[{name:'Hoe',              stam:1, yield:0},
+        {name:'Iron hoe',         stam:1, yield:0, cost:{Iron:2,Plank:1}, note:'Turns two squares of ground for the same effort.'},
+        {name:'Fine hoe',         stam:0, yield:0, cost:{Iron:4,Rope:1},  note:'Costs you nothing but the walking.'}],
+  axe :[{name:'Axe',              stam:2, yield:0},
+        {name:'Iron axe',         stam:1, yield:1, cost:{Iron:3,Plank:1}, note:'More wood, less puff.'},
+        {name:'Felling axe',      stam:1, yield:3, cost:{Iron:5,Rope:1},  note:'A tree at a time.'}],
+  pick:[{name:'Pick',             stam:2, yield:0},
+        {name:'Iron pick',        stam:1, yield:1, cost:{Iron:3,Plank:1}, note:'Bites properly into rock.'},
+        {name:'Ore pick',         stam:1, yield:3, cost:{Iron:5,Brick:2}, note:'Finds the ore in the seam.'}],
+  can :[{name:'Watering can',     cap:8},
+        {name:'Copper can',       cap:16, cost:{Iron:2,Cloth:1}, note:'Twice the rows before the walk back.'},
+        {name:'Great can',        cap:28, cost:{Iron:4,Rope:2},  note:'Half the day saved.'}],
+};
+function tierOf(t){return (S.kit&&S.kit[t])||0;}
+function kitOf(t){const a=KIT[t];return a[Math.min(tierOf(t),a.length-1)];}
+function canCap(){return kitOf('can').cap||8;}
+function toolStam(id,base){const k=KIT[id]?kitOf(id):null;return (k&&k.stam!==undefined)?k.stam:base;}
+function toolBonus(id){const k=KIT[id]?kitOf(id):null;return (k&&k.yield)||0;}
+function stationHere(){
+  const b=['forge','seedhouse'].find(id=>{
+    const d=BLD[id];
+    return d&&Math.hypot(d.door.x*TILE-S.px,d.door.y*TILE-S.py)<2.2*TILE;
+  });
+  return b||null;
+}
+function openCraft(at){
+  paused=true;
+  const mine=careerOf(S.claimed);
+  const recipes=REFINE.filter(r=>r.at===at);
+  const rows=recipes.map(r=>{
+    const can=has(r.cost);
+    const own=mine&&r.career===mine;
+    const costs=Object.keys(r.cost).map(k=>{
+      const short=bagCount(k)<r.cost[k];
+      return '<span style="color:'+(short?'var(--rose)':'var(--green)')+'">'+bagCount(k)+'/'+r.cost[k]+' '+k+'</span>';
+    }).join(' · ');
+    return '<div class="row"><div style="min-width:0;"><strong>'+r.name+'</strong>'
+      +(own?' <span class="hint" style="color:var(--green);">· your trade</span>':'')
+      +'<div class="hint">'+r.hint+'</div><div class="hint">'+costs+'</div></div>'
+      +'<button '+(can?'class="primary" ':'disabled ')+'data-make="'+r.id+'">Make</button></div>';
+  }).join('');
+  const kitRows=Object.keys(KIT).map(t=>{
+    const cur=tierOf(t), arr=KIT[t], nxt=arr[cur+1];
+    if(!nxt)return '<div class="row"><div><strong>'+arr[cur].name+'</strong><div class="hint">as good as it gets</div></div></div>';
+    const can=has(nxt.cost);
+    const costs=Object.keys(nxt.cost).map(k=>{
+      const short=bagCount(k)<nxt.cost[k];
+      return '<span style="color:'+(short?'var(--rose)':'var(--green)')+'">'+bagCount(k)+'/'+nxt.cost[k]+' '+k+'</span>';
+    }).join(' · ');
+    return '<div class="row"><div style="min-width:0;"><strong>'+nxt.name+'</strong>'
+      +'<div class="hint">'+nxt.note+'</div><div class="hint">'+costs+'</div></div>'
+      +'<button '+(can?'class="primary" ':'disabled ')+'data-kit="'+t+'">Upgrade</button></div>';
+  }).join('');
+  OR('<h3>'+(at==='forge'?'The forge':'The workroom')+'</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Nothing is bought here either. Bring what you dug up and turn it into something the valley can use.</div>'
+    +'<h3 style="font-size:14px;margin:12px 0 6px;">Refining</h3>'+rows
+    +(at==='forge'?('<h3 style="font-size:14px;margin:16px 0 6px;">Your kit</h3>'
+      +'<div class="hint" style="margin-bottom:8px;">Better tools mean less puff and more in the basket. Yours to keep.</div>'+kitRows):'')
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-make]').forEach(b=>{if(b.disabled)return;
+    b.onclick=async()=>{
+      const r=REFINE.find(x=>x.id===b.dataset.make);
+      if(!has(r.cost))return;
+      const own=mine&&r.career===mine;
+      payFor(r.cost);
+      const n=r.n+(own?1:0);                 /* your own trade goes further */
+      bagAdd(r.into,n);
+      S.standing+=1;
+      await save();
+      toast('+'+n+' '+r.into+(own?' — your trade, so it went further':''));
+      openCraft(at);
+    };});
+  document.querySelectorAll('[data-kit]').forEach(b=>{if(b.disabled)return;
+    b.onclick=async()=>{
+      const t=b.dataset.kit, arr=KIT[t], nxt=arr[tierOf(t)+1];
+      if(!nxt||!has(nxt.cost))return;
+      payFor(nxt.cost);
+      S.kit=S.kit||{};S.kit[t]=(S.kit[t]||0)+1;
+      if(t==='can')S.cans=Math.min(S.cans,canCap());
+      await save();drawToolbar();
+      toast(nxt.name+' — that will make a difference.');
+      openCraft(at);
+    };});
+  document.getElementById('closeB').onclick=close;
+}
+
+/* ============================================================
+   THE DEEP
+   A door in the woods. Steel on the way in, none on the way out —
+   but whatever you carry up, you keep.
+   ============================================================ */
+const DOOR={x:34,y:86};
+const CLASSES=[
+  {id:'fighter',name:'Fighter', hp:26, hit:2, dmg:8,  heal:0, kit:'a notched sword and a dented shield',
+   quip:'You have swung a scythe. It is not so different.'},
+  {id:'ranger', name:'Ranger',  hp:20, hit:4, dmg:6,  heal:0, kit:'a short bow and too few arrows',
+   quip:'You know the woods better than the woods know you.'},
+  {id:'mage',   name:'Hedge-mage',hp:16,hit:3, dmg:10, heal:0, kit:'a stick that hums when you hold it',
+   quip:'Half of it is confidence. The other half is also confidence.'},
+  {id:'healer', name:'Herbalist',hp:22, hit:1, dmg:4,  heal:7, kit:'a satchel that smells of the good shelf',
+   quip:'Somebody has to put everyone back together.'},
+];
+const DEPTHS=[
+  {id:'workings',name:'the flooded workings',blurb:'Water to the ankle and older than the valley.',
+   foes:['a bad-tempered badger','three enormous rats','something pale that swims'],loot:['Ore','Clay','Stone'],boss:'the thing in the sump'},
+  {id:'bore',name:'the old bore',blurb:'A shaft driven straight down by somebody in a hurry.',
+   foes:['a damp goblin','a rockfall that moves','the old miner'],loot:['Ore','Iron','Brick'],boss:'what the miners left behind'},
+  {id:'roots',name:'the root cellar',blurb:'It goes further back than any cellar has business going.',
+   foes:['something with opinions','a knot of roots that grips','a badger with a grudge'],loot:['Berries','Fibre','Cloth'],boss:'the thing under the orchard'},
+  {id:'kiln',name:'the buried kiln',blurb:'Still warm. Nobody will say who lit it.',
+   foes:['a coal that walks','a damp goblin','something with opinions'],loot:['Brick','Iron','Rope'],boss:'the last potter'},
+  {id:'stair',name:'the winding stair',blurb:'Steps cut for someone with a longer leg than yours.',
+   foes:['three enormous rats','a rockfall that moves','something pale that swims'],loot:['Stone','Ore','Rope'],boss:'the one who cut the steps'},
+];
+const ROOMS=['fight','fight','fight','find','find','trap','shrine','rest','fork'];
+const TRAPS=[
+  {t:'The floor gives way.',    dmg:6, quip:'Everyone lands badly and pretends they meant to.'},
+  {t:'Something bites in the dark.',dmg:5,quip:'Nobody sees what.'},
+  {t:'A gust puts the lamp out.',dmg:3,quip:'It takes a while to find it again.'},
+  {t:'Steam, from somewhere below.',dmg:7,quip:'The walls sweat afterwards.'},
+];
+const SHRINES=[
+  {t:'A dry alcove with a bowl in it.',boon:'wind',   say:'Everyone breathes easier.'},
+  {t:'Old marks scratched at eye height.',boon:'aim', say:'Your hands feel steadier.'},
+  {t:'A cold seam of clean water.',boon:'wind',       say:'You drink and feel better for it.'},
+];
+const FOES=[
+  {n:'a bad-tempered badger', hp:14, dmg:7,  quip:'It has clearly done this before.'},
+  {n:'three enormous rats',   hp:16, dmg:6,  quip:'They appear to be organised.'},
+  {n:'a damp goblin',         hp:20, dmg:9,  quip:'It looks as fed up as you are.'},
+  {n:'a rockfall that moves', hp:26, dmg:11, quip:'You would rather it did not.'},
+  {n:'something with opinions',hp:24,dmg:10, quip:'It has been alone a long while.'},
+  {n:'the old miner',         hp:30, dmg:12, quip:'He does not remember going down here.'},
+  {n:'something pale that swims',hp:22,dmg:9, quip:'It does not like the lamp.'},
+  {n:'a knot of roots that grips',hp:28,dmg:8,quip:'It has all the time in the world.'},
+  {n:'a coal that walks',      hp:24, dmg:11, quip:'It leaves scorch marks where it stands.'},
+  {n:'a badger with a grudge', hp:18, dmg:9,  quip:'Possibly the same badger.'},
+];
+const FAINTS=['tripped over your own feet','fainted, briefly and with dignity','went over backwards into a puddle',
+  'sat down very suddenly','walked into the doorframe','was knocked clean over by a rat',
+  'lost an argument with the floor','decided to have a lie down'];
+const TREASURE=[
+  {item:'Ore',n:4},{item:'Iron',n:2},{item:'Stone',n:6},{item:'Clay',n:4},
+  {item:'Berries',n:3},{item:'Cloth',n:2},{item:'Rope',n:1},{item:'Brick',n:3},
+];
+function d(n){return 1+Math.floor(Math.random()*n);}
+function classById(id){return CLASSES.find(c=>c.id===id);}
+
+function openDoor(){
+  paused=true;
+  const grown=FOLK.filter(f=>!f.child&&f.id!==S.claimed);
+  OR('<h3>A door in the trees</h3>'
+    +'<p class="sub">Somebody put a door here, a long time ago, in a hillside with nothing behind it. '
+    +'It is warm to touch. Whatever you take down there, you leave down there — but what you carry up is yours.</p>'
+    +'<div class="card"><strong>Who are you down there?</strong>'
+    +'<div class="hint">The steel is waiting on the other side. It will not follow you back out.</div></div>'
+    +CLASSES.map(c=>'<div class="row"><div style="min-width:0;"><strong>'+c.name+'</strong>'
+      +'<div class="hint">'+c.quip+'</div>'
+      +'<div class="hint">'+c.hp+' wind · '+c.kit+'</div></div>'
+      +'<button class="primary" data-cls="'+c.id+'">Take it up</button></div>').join('')
+    +'<div class="acts"><button class="primary" id="closeB">Not today</button></div>');
+  document.querySelectorAll('[data-cls]').forEach(b=>b.onclick=()=>openParty(b.dataset.cls));
+  document.getElementById('closeB').onclick=close;
+}
+function openParty(cls){
+  paused=true;
+  const pool=FOLK.filter(f=>!f.child&&f.id!==S.claimed);
+  const chosen=[];
+  const render=()=>{
+    OR('<h3>Anyone coming?</h3>'
+      +'<p class="sub">Ask up to three. If they are away from the valley they will come anyway — '
+      +'and they will hear all about it when they get back.</p>'
+      +pool.map(f=>{
+        const on=chosen.indexOf(f.id)>=0;
+        const c=careerById(careerOf(f.id));
+        return '<div class="row"><div class="who" style="display:flex;gap:10px;align-items:center;">'
+          +'<canvas class="pp" data-p="'+f.id+'" width="36" height="36" style="width:34px;height:34px;image-rendering:pixelated;border:1px solid var(--line);border-radius:4px;"></canvas>'
+          +'<div><strong>'+esc(firstName(f.name))+'</strong><div class="hint">'+esc((c||{}).name||'')+'</div></div></div>'
+          +'<button '+(on?'class="primary" ':'')+'data-ask="'+f.id+'">'+(on?'coming':'ask')+'</button></div>';
+      }).join('')
+      +'<div class="acts"><button class="primary" id="goB">Open the door</button>'
+      +'<button id="backB">Back</button></div>');
+    document.querySelectorAll('.pp').forEach(c=>{
+      const f=FOLK.find(z=>z.id===c.dataset.p);
+      const g=c.getContext('2d');g.imageSmoothingEnabled=false;drawPortrait(g,f.pal,c.width/32);
+    });
+    document.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{
+      const id=b.dataset.ask,i=chosen.indexOf(id);
+      if(i>=0)chosen.splice(i,1);
+      else if(chosen.length<3)chosen.push(id);
+      else toast('Three is plenty.');
+      render();
+    });
+    document.getElementById('goB').onclick=()=>startDelve(cls,chosen);
+    document.getElementById('backB').onclick=openDoor;
+  };
+  render();
+}
+function pickDepth(){
+  const seed=Date.now()+Math.floor(Math.random()*9999);
+  return DEPTHS[seed%DEPTHS.length];
+}
+function startDelve(cls,ids){
+  const me=meFolk();
+  const party=[{id:S.claimed||'me',name:me?firstName(me.name):(S.player.name||'you'),
+                cls,hp:classById(cls).hp,max:classById(cls).hp,you:true,faints:0,hits:0}];
+  /* whoever comes along gets whatever class you did not take */
+  const spare=CLASSES.filter(c=>c.id!==cls);
+  ids.forEach((id,i)=>{
+    const f=FOLK.find(x=>x.id===id);
+    const c=spare[i%spare.length];
+    party.push({id,name:firstName(f.name),cls:c.id,hp:c.hp,max:c.hp,you:false,faints:0,hits:0});
+  });
+  const depth=pickDepth();
+  /* the shape of the place is rolled fresh every time */
+  const plan=[];
+  const len=5+d(6);
+  for(let i=0;i<len;i++)plan.push(ROOMS[d(ROOMS.length)-1]);
+  plan.push('boss');
+  S.delve={party,room:1,rooms:plan.length,plan,depth:depth.id,depthName:depth.name,
+           log:['You go down into '+depth.name+'. '+depth.blurb],
+           loot:{},foe:null,boon:{aim:0,wind:0},over:false};
+  save();nextRoom();
+}
+function alive(p){return p.hp>0;}
+function depthOf(){return DEPTHS.find(x=>x.id===(S.delve&&S.delve.depth))||DEPTHS[0];}
+function depthLoot(){
+  const dp=depthOf();
+  const pool=dp.loot.concat(['Berries','Stone']);
+  const item=pool[d(pool.length)-1];
+  return {item,n:2+d(3)};
+}
+function nextRoom(){
+  const D=S.delve;
+  if(D.room>D.rooms){endDelve(true);return;}
+  const kind=D.plan?D.plan[D.room-1]:'fight';
+  if(kind==='find'){
+    const t=depthLoot();
+    D.loot[t.item]=(D.loot[t.item]||0)+t.n;
+    D.log.push('Room '+D.room+': a niche in the wall, and '+t.n+' '+t.item.toLowerCase()+' nobody has missed in years.');
+    D.room++;save();showRoom('You find something.','+'+t.n+' '+t.item);
+    return;
+  }
+  if(kind==='trap'){
+    const tr=TRAPS[d(TRAPS.length)-1];
+    const hit=D.party.filter(alive);
+    hit.forEach(p=>{p.hp-=d(tr.dmg);
+      if(p.hp<=0){p.faints++;D.log.push(p.name+' '+FAINTS[d(FAINTS.length)-1]+'.');}});
+    D.log.push('Room '+D.room+': '+tr.t);
+    D.room++;
+    if(!D.party.some(alive)){save();endDelve(false,true);return;}
+    save();showRoom(tr.t,tr.quip);return;
+  }
+  if(kind==='shrine'){
+    const sh=SHRINES[d(SHRINES.length)-1];
+    D.boon=D.boon||{aim:0,wind:0};
+    if(sh.boon==='wind'){D.party.forEach(p=>{p.max+=4;p.hp=Math.min(p.max,p.hp+8);});D.boon.wind++;}
+    else{D.boon.aim++;}
+    D.log.push('Room '+D.room+': '+sh.t);
+    D.room++;save();showRoom(sh.t,sh.say);return;
+  }
+  if(kind==='rest'){
+    D.party.forEach(p=>{if(p.hp<=0)p.hp=Math.ceil(p.max*0.5);else p.hp=Math.min(p.max,p.hp+d(8)+4);});
+    D.log.push('Room '+D.room+': somewhere dry enough to sit down.');
+    D.room++;save();showRoom('Somewhere dry enough to sit.','Everyone gets their wind back.');return;
+  }
+  if(kind==='fork'){
+    D.room++;save();
+    paused=true;
+    OR('<h3>The passage splits</h3>'
+      +'<div class="card"><div class="hint">One way is narrow and dry. The other is wider, and something has been along it.</div></div>'
+      +partyBar()
+      +'<div class="acts"><button class="primary" id="safeB">Take the narrow way</button>'
+      +'<button id="riskB">Take the wide one</button></div>');
+    document.getElementById('safeB').onclick=()=>{
+      const t=depthLoot();D.loot[t.item]=(D.loot[t.item]||0)+Math.ceil(t.n/2);
+      D.log.push('You took the narrow way. Slow, but nothing came at you.');
+      save();showRoom('The narrow way','It opens out eventually.');
+    };
+    document.getElementById('riskB').onclick=()=>{
+      const t=depthLoot();D.loot[t.item]=(D.loot[t.item]||0)+t.n*2;
+      D.party.filter(alive).forEach(p=>{p.hp-=d(6);
+        if(p.hp<=0){p.faints++;D.log.push(p.name+' '+FAINTS[d(FAINTS.length)-1]+'.');}});
+      D.log.push('You took the wide way. It cost you, and it paid.');
+      if(!D.party.some(alive)){save();endDelve(false,true);return;}
+      save();showRoom('The wide way','Worth it, on balance. Probably.');
+    };
+    return;
+  }
+  const dp=depthOf();
+  const name=dp.foes[d(dp.foes.length)-1];
+  const base=FOES.find(x=>x.n===name)||FOES[d(FOES.length)-1];
+  const boss=(kind==='boss');
+  const deeper=1+Math.floor(D.room/3);
+  D.foe={n:boss?dp.boss:name,
+         hp:boss?46:(base.hp+deeper*4), max:boss?46:(base.hp+deeper*4),
+         dmg:boss?14:(base.dmg+deeper), quip:boss?'It has been waiting, and it is not pleased.':base.quip, boss};
+  save();showFight();
+}
+function showRoom(title,sub){
+  paused=true;
+  const D=S.delve;
+  OR('<h3>'+esc(title)+'</h3>'
+    +'<div class="card"><strong>'+esc(sub)+'</strong>'
+    +'<div class="hint">'+esc(D.log[D.log.length-1]||'')+'</div></div>'
+    +partyBar()
+    +'<div class="acts"><button class="primary" id="onB">Deeper</button>'
+    +'<button id="outB">Back up the stairs</button></div>');
+  document.getElementById('onB').onclick=nextRoom;
+  document.getElementById('outB').onclick=()=>endDelve(false);
+}
+function partyBar(){
+  const D=S.delve;
+  return '<h3 style="font-size:14px;margin:12px 0 6px;">The party</h3>'
+    +D.party.map(p=>{
+      const c=classById(p.cls);
+      const pct=Math.max(0,Math.round(100*p.hp/p.max));
+      return '<div class="row"><div style="min-width:0;"><strong>'+esc(p.name)+'</strong>'
+        +(p.you?' <span class="hint" style="color:var(--green);">· you</span>':'')
+        +'<div class="hint">'+c.name+(p.hp<=0?' · out cold':'')+'</div>'
+        +'<div class="bar"><i style="width:'+pct+'%;background:'+(p.hp<=0?'var(--rose)':'var(--green)')+'"></i></div></div>'
+        +'<span class="hint">'+Math.max(0,p.hp)+'/'+p.max+'</span></div>';
+    }).join('');
+}
+function showFight(msg){
+  paused=true;
+  const D=S.delve,f=D.foe;
+  const pct=Math.max(0,Math.round(100*f.hp/f.max));
+  OR('<h3>'+(f.boss?'The bottom of '+(D.depthName||'the stair'):'Room '+D.room+' of '+(D.depthName||'the deep'))+'</h3>'
+    +'<div class="card"><strong>'+esc(f.n)+'</strong><div class="hint">'+esc(f.quip)+'</div>'
+    +'<div class="bar"><i style="width:'+pct+'%;background:var(--rose)"></i></div></div>'
+    +(msg?('<div class="card"><div class="hint">'+msg+'</div></div>'):'')
+    +partyBar()
+    +'<div class="acts"><button class="primary" id="atkB">Swing</button>'
+    +'<button id="runB">Run for the stairs</button></div>');
+  document.getElementById('atkB').onclick=doRound;
+  document.getElementById('runB').onclick=()=>{
+    S.delve.log.push('You all ran. Nobody talks about it.');
+    endDelve(false);
+  };
+}
+function doRound(){
+  const D=S.delve,f=D.foe;
+  let out=[];
+  /* your side */
+  D.party.filter(alive).forEach(p=>{
+    const c=classById(p.cls);
+    if(c.heal){
+      const down=D.party.filter(x=>x.hp<=0)[0];
+      if(down){down.hp=Math.ceil(down.max*0.35);
+        out.push('<strong>'+esc(p.name)+'</strong> gets '+esc(down.name)+' sitting up again');return;}
+      const hurt=D.party.filter(x=>x.hp>0&&x.hp<x.max).sort((a,b)=>a.hp-b.hp)[0];
+      if(hurt){const h=d(c.heal);hurt.hp=Math.min(hurt.max,hurt.hp+h);
+        out.push('<strong>'+esc(p.name)+'</strong> patches up '+esc(hurt.name)+' (+'+h+')');return;}
+    }
+    const roll=d(20)+c.hit+((D.boon&&D.boon.aim)||0)*2;
+    if(roll>=9){
+      const dmg=d(c.dmg);
+      f.hp-=dmg;p.hits++;
+      out.push('<strong>'+esc(p.name)+'</strong> rolls '+roll+' — hits for '+dmg);
+    }else{
+      out.push('<strong>'+esc(p.name)+'</strong> rolls '+roll+' — misses, and looks about to see if anyone noticed');
+    }
+  });
+  if(f.hp<=0){
+    D.log.push('Room '+D.room+': '+f.n+' saw sense.');
+    const t=TREASURE[d(TREASURE.length)-1];
+    const n=t.n+(f.boss?d(6):d(2));
+    D.loot[t.item]=(D.loot[t.item]||0)+n;
+    D.room++;D.foe=null;
+    D.party.forEach(p=>{if(p.hp<=0)p.hp=Math.ceil(p.max*0.4);else p.hp=Math.min(p.max,p.hp+d(4));});
+    save();
+    showRoom(f.boss?'It stops moving.':'That is that.','+'+n+' '+t.item);
+    return;
+  }
+  /* its side */
+  const standing=D.party.filter(alive);
+  const swings=f.boss?2:(standing.length>2?2:1);
+  for(let s=0;s<swings&&standing.length;s++){
+    const t=standing[d(standing.length)-1];
+    if(t.hp<=0)continue;
+    const roll=d(20);
+    if(roll>=8){
+      const dmg=d(f.dmg);
+      t.hp-=dmg;
+      out.push('<em>'+esc(f.n)+' rolls '+roll+' — catches '+esc(t.name)+' for '+dmg+'</em>');
+      if(t.hp<=0){
+        t.faints++;
+        const how=FAINTS[d(FAINTS.length)-1];
+        out.push('<em><strong>'+esc(t.name)+'</strong> '+how+'.</em>');
+        D.log.push(t.name+' '+how+'.');
+      }
+    }else out.push('<em>'+esc(f.n)+' rolls '+roll+' — swings wide</em>');
+  }
+  if(!D.party.some(alive)){save();endDelve(false,true);return;}
+  save();showFight(out.join('<br>'));
+}
+async function endDelve(finished,wiped){
+  const D=S.delve;
+  if(!D)return;
+  paused=true;
+  /* everyone wakes up on the grass, and the steel stays below */
+  const mine={},shares={};
+  Object.keys(D.loot).forEach(k=>{
+    const total=D.loot[k];
+    const each=Math.floor(total/D.party.length);
+    const rest=total-each*(D.party.length-1);
+    mine[k]=rest;
+    if(each>0)D.party.filter(p=>!p.you).forEach(p=>{
+      shares[p.id]=shares[p.id]||{};
+      shares[p.id][k]=(shares[p.id][k]||0)+each;
+    });
+  });
+  Object.keys(mine).forEach(k=>{if(mine[k]>0)bagAdd(k,mine[k]);});
+  const faints=D.party.reduce((a,p)=>a+p.faints,0);
+  const meName=(D.party.find(p=>p.you)||{}).name||'you';
+  const tale='You went down into '+(D.depthName||'the deep')+'. '
+    +(wiped?'It went badly.':(finished?'You came back up.':'You came back up early.'))
+    +' Between you the party '+(faints?('went over '+faints+' time'+(faints===1?'':'s')):'stayed upright the whole way')+'.';
+  /* tell the friends who came what happened to them */
+  S.reports=S.reports||[];
+  for(const p of D.party.filter(x=>!x.you)){
+    const got=shares[p.id]||{};
+    const line=meName+' took you down into '+(D.depthName||'the deep')+'. You went as the '+classById(p.cls).name.toLowerCase()
+      +', you '+(p.faints?('passed out '+p.faints+' time'+(p.faints===1?'':'s')):'stayed on your feet')
+      +', and '+(Object.keys(got).length?('your share is '+Object.entries(got).map(([k,v])=>v+' '+k).join(', ')):'there was nothing worth carrying');
+    S.reports.push({who:p.id,text:line,day:S.day});
+    if(NET.ready()){
+      const g=(NET.growers||[]).find(x=>x.look&&x.look.claimed===p.id&&x.id!==NET.me);
+      if(g){
+        await NET.note(g.id,line);
+        for(const [item,n] of Object.entries(got)){ if(n>0) await NET.gift(g.id,item,n,'from the stair'); }
+      }
+    }
+  }
+  const lootRows=Object.keys(mine).filter(k=>mine[k]>0)
+    .map(k=>'<div class="row"><div><strong>'+esc(k)+'</strong></div><span class="hint">+'+mine[k]+'</span></div>').join('')
+    ||'<div class="hint">Nothing but a story.</div>';
+  const story=D.log.slice(-6).map(l=>'<div class="hint">· '+esc(l)+'</div>').join('');
+  S.delve=null;S.standing+=Math.max(1,Object.keys(mine).length);
+  await save();
+  OR('<h3>'+(wiped?'You wake on the grass':'Up the stairs')+'</h3>'
+    +'<p class="sub">'+esc(tale)+' The steel is gone from your hands — it always is.</p>'
+    +'<h3 style="font-size:14px;margin:12px 0 6px;">What came up with you</h3>'+lootRows
+    +(story?('<h3 style="font-size:14px;margin:14px 0 6px;">How it went</h3>'+story):'')
+    +(D.party.length>1?('<div class="card" style="margin-top:10px;"><strong>The others</strong>'
+      +'<div class="hint">Their share has been sent on. They will hear about it when they are next about.</div></div>'):'')
+    +'<div class="acts"><button class="primary" id="closeB">Home</button></div>');
+  document.getElementById('closeB').onclick=close;
+}
+function showReports(){
+  const r=(S.reports||[]).filter(x=>x.who===S.claimed);
+  if(!r.length)return;
+  S.reports=(S.reports||[]).filter(x=>x.who!==S.claimed);
+  save();
+  toast(r[r.length-1].text);
+}
+
+/* ================= STOCK ================= */
+const STOCK_KIND={
+  hen  :{name:'Hens',  house:'coop',    gives:'Egg',  n:2, feed:1, buy:{Fibre:4,Wood:6},   care:'scattered feed'},
+  goat :{name:'Goats', house:'goatpen', gives:'Milk', n:2, feed:2, buy:{Fibre:6,Plank:2},  care:'let out to browse'},
+  sheep:{name:'Sheep', house:'goatpen', gives:'Wool', n:2, feed:2, buy:{Fibre:8,Rope:1},   care:'checked over'},
+  cow  :{name:'Cows',  house:'barn',    gives:'Milk', n:4, feed:3, buy:{Plank:6,Rope:2},   care:'milked and turned out'},
+};
+function herd(){return S.stock||(S.stock={});}
+function haveHouse(k){return (S.built||[]).some(b=>b.id===STOCK_KIND[k].house);}
+function stockCount(k){return (herd()[k]||{n:0}).n||0;}
+function feedNeeded(){
+  let f=0;Object.keys(STOCK_KIND).forEach(k=>{f+=stockCount(k)*STOCK_KIND[k].feed;});
+  return f;
+}
+function morningStock(){
+  const out=[];
+  const need=feedNeeded();
+  const have=bagCount('Feed');
+  const fed=Math.min(need,have);
+  if(need>0)bagTake('Feed',fed);
+  const ratio=need?fed/need:1;
+  Object.keys(STOCK_KIND).forEach(k=>{
+    const n=stockCount(k);if(!n)return;
+    const K=STOCK_KIND[k];
+    const got=Math.max(0,Math.round(n*(K.n/2)*ratio));
+    if(got>0){bagAdd(K.gives,got);out.push(got+' '+K.gives);}
+  });
+  if(need>have&&need>0)out.push('(short of feed — they gave less)');
+  return out;
+}
+function openStock(){
+  paused=true;
+  const rows=Object.keys(STOCK_KIND).map(k=>{
+    const K=STOCK_KIND[k],n=stockCount(k),house=haveHouse(k),can=has(K.buy);
+    const costs=Object.keys(K.buy).map(x=>{
+      const short=bagCount(x)<K.buy[x];
+      return '<span style="color:'+(short?'var(--rose)':'var(--green)')+'">'+bagCount(x)+'/'+K.buy[x]+' '+x+'</span>';
+    }).join(' · ');
+    return '<div class="row"><div style="min-width:0;"><strong>'+K.name+'</strong>'
+      +(n?(' <span class="hint">· '+n+' in the '+K.house+'</span>'):'')
+      +'<div class="hint">'+K.gives.toLowerCase()+' each morning, '+K.care+'. Eats '+K.feed+' feed a day.</div>'
+      +'<div class="hint">'+(house?costs:'needs a '+K.house+' built first')+'</div></div>'
+      +(house?('<button '+(can?'class="primary" ':'disabled ')+'data-add="'+k+'">Take some on</button>'):'<span class="hint">no housing</span>')
+      +'</div>';
+  }).join('');
+  const need=feedNeeded();
+  OR('<h3>The stock</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Animals come from neighbours, not from money. Build them somewhere to live and someone will spare you a few.</div>'
+    +'<div class="card"><strong>Feed</strong><div class="hint">'
+    +'They eat '+need+' a day between them. You have '+bagCount('Feed')+'. Feed is milled from wheat at the workroom.</div></div>'
+    +rows
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-add]').forEach(b=>{if(b.disabled)return;
+    b.onclick=async()=>{
+      const k=b.dataset.add,K=STOCK_KIND[k];
+      if(!has(K.buy))return;
+      payFor(K.buy);
+      herd()[k]=herd()[k]||{n:0};herd()[k].n+=2;
+      S.standing+=2;await save();
+      toast('Two '+K.name.toLowerCase()+' settled in.');
+      openStock();
+    };});
+  document.getElementById('closeB').onclick=close;
+}
+
+/* ================= THE RIVER AND THE WOODS ================= */
+const FISH=[
+  {n:'Perch',   w:5, seasons:['spring','summer','autumn','winter']},
+  {n:'Trout',   w:4, seasons:['spring','autumn']},
+  {n:'Eel',     w:3, seasons:['summer','autumn']},
+  {n:'Pike',    w:2, seasons:['autumn','winter']},
+  {n:'Bream',   w:3, seasons:['spring','summer']},
+  {n:'Old boot',w:2, seasons:['spring','summer','autumn','winter'],junk:true},
+];
+function openFish(){
+  paused=true;
+  let bite=false,cast=false,t0=0,timer=null;
+  const draw=(state,msg)=>{
+    OR('<h3>The riverbank</h3>'
+      +'<div class="card"><strong>'+state+'</strong><div class="hint">'+(msg||'')+'</div></div>'
+      +'<div class="acts">'
+      +(cast?'<button class="primary" id="pullB">Strike</button>':'<button class="primary" id="castB">Cast</button>')
+      +'<button id="closeB">Wind in and go</button></div>');
+    const cb=document.getElementById('castB');
+    if(cb)cb.onclick=()=>{
+      if(!spend(1))return;
+      cast=true;bite=false;
+      draw('The float sits still.','Wait for it.');
+      const wait=900+Math.random()*3200;
+      timer=setTimeout(()=>{
+        bite=true;t0=Date.now();
+        draw('The float goes under.','NOW.');
+        setTimeout(()=>{if(bite){bite=false;cast=false;draw('It spat the hook.','Too slow. It happens.');}},1100);
+      },wait);
+    };
+    const pb=document.getElementById('pullB');
+    if(pb)pb.onclick=async()=>{
+      if(!bite){clearTimeout(timer);cast=false;draw('You struck at nothing.','The float bobs, unimpressed.');return;}
+      bite=false;cast=false;
+      const quick=Date.now()-t0;
+      const pool=FISH.filter(f=>f.seasons.indexOf(season().id)>=0);
+      const bag=[];pool.forEach(f=>{for(let i=0;i<f.w;i++)bag.push(f);});
+      const got=bag[Math.floor(Math.random()*bag.length)];
+      const n=(quick<420?2:1);
+      bagAdd(got.n,n);await save();
+      draw(got.junk?'An old boot.':(n>1?'Two '+got.n.toLowerCase()+'!':'A '+got.n.toLowerCase()+'.'),
+           got.junk?'Somebody has been here before you.':(quick<420?'Struck like lightning.':'Landed neatly.'));
+    };
+    document.getElementById('closeB').onclick=()=>{clearTimeout(timer);close();};
+  };
+  draw('Flat water, and something moving in it.','Cast when you are ready. It costs a bit of puff.');
+}
+const GAME=[
+  {n:'Rabbit', hp:1, meat:1, hide:0, speed:900},
+  {n:'Duck',   hp:1, meat:1, hide:0, speed:700},
+  {n:'Deer',   hp:2, meat:3, hide:1, speed:1400},
+  {n:'Boar',   hp:3, meat:4, hide:2, speed:1600},
+];
+function openHunt(){
+  paused=true;
+  let shots=4,bagged={},run=null,tgt=null,shown=0;
+  const finish=async()=>{
+    if(run)clearTimeout(run);
+    const rows=Object.keys(bagged).length
+      ? Object.entries(bagged).map(([k,v])=>'<div class="row"><div><strong>'+esc(k)+'</strong></div><span class="hint">+'+v+'</span></div>').join('')
+      : '<div class="hint">Nothing but cold hands.</div>';
+    await save();
+    OR('<h3>Back from the treeline</h3>'+rows
+      +'<div class="acts"><button class="primary" id="closeB">Home</button></div>');
+    document.getElementById('closeB').onclick=close;
+  };
+  const step=()=>{
+    if(shots<=0){finish();return;}
+    tgt=GAME[Math.floor(Math.random()*GAME.length)];
+    shown=Date.now();
+    const lead=tgt.speed*(0.6+Math.random()*0.6);
+    OR('<h3>The treeline</h3>'
+      +'<div class="card"><strong>'+esc(tgt.n)+'</strong>'
+      +'<div class="hint">Breaking cover — take it now or let it go.</div></div>'
+      +'<div class="hint">Shots left: '+shots+'</div>'
+      +'<div class="acts"><button class="primary" id="fireB">Fire</button>'
+      +'<button id="holdB">Let it go</button>'
+      +'<button id="outB">Head back</button></div>');
+    document.getElementById('fireB').onclick=()=>{
+      const took=Date.now()-shown;
+      shots--;
+      if(run)clearTimeout(run);
+      if(took<lead){
+        bagged[tgt.n+' meat']=(bagged[tgt.n+' meat']||0)+tgt.meat;
+        bagAdd('Meat',tgt.meat);
+        if(tgt.hide){bagAdd('Hide',tgt.hide);bagged['Hide']=(bagged['Hide']||0)+tgt.hide;}
+        toast('Clean shot — '+tgt.n.toLowerCase());
+      }else toast('Gone into the trees.');
+      setTimeout(step,300);
+    };
+    document.getElementById('holdB').onclick=()=>{if(run)clearTimeout(run);setTimeout(step,200);};
+    document.getElementById('outB').onclick=finish;
+    run=setTimeout(()=>{toast('It was away before you were ready.');shots--;step();},lead);
+  };
+  if(!spend(3)){close();return;}
+  step();
+}
 /* ================= BLUEPRINTS ================= */
 const PLANS=[
   {id:'coop',   name:'Chicken coop',  cost:{Wood:20,Fibre:8},          w:4,h:3,
@@ -1863,7 +2635,10 @@ function openBag(){
     '<div class="item"><canvas class="ic" data-i="'+i+'" width="32" height="32"></canvas>'
     +'<div style="min-width:0;"><strong>'+esc(b.item)+'</strong><div class="hint">×'+b.n+'</div></div></div>').join('')+'</div>')
     :'<div class="hint">Empty. There are seeds in the library and nobody will ask you for anything in return.</div>';
-  OR('<h3>Basket</h3>'+rows+'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  OR('<h3>Basket</h3>'+rows
+    +'<div class="acts"><button id="eatB">Eat something</button>'
+    +'<button class="primary" id="closeB">Close</button></div>');
+  const eb=document.getElementById('eatB');if(eb)eb.onclick=openEat;
   document.querySelectorAll('.ic').forEach(c2=>{
     const g=c2.getContext('2d');g.imageSmoothingEnabled=false;
     drawIcon(g,S.bag[parseInt(c2.dataset.i)].item,2);
@@ -2055,7 +2830,8 @@ async function doSleep(){
   });
   S.day++;S.min=DAY_START;S.stam=STAMINA;
   checkGifts();
-  const got=morningYield();
+  const stock=morningStock();
+  const got=morningYield().concat(stock);
   if(got.length)setTimeout(()=>toast('Morning — '+got.join(' and ')+' collected'),1200);S.cans=Math.max(S.cans,0);
   S.needs=[];S.needsDay=0;
   await save();updateHud();drawToolbar();
@@ -2080,7 +2856,7 @@ function toast(m){
 }
 function fmt(){const h=Math.floor(S.min/60)%24,m=Math.floor(S.min%60);return h+':'+(m<10?'0':'')+m;}
 function updateHud(){
-  document.getElementById('dayTag').innerText='DAY '+S.day+' · '+fmt();
+  document.getElementById('dayTag').innerText=season().name.toUpperCase()+' '+seasonDay()+' · '+fmt()+' · yr '+yearOf();
   let p='';for(let i=0;i<STAMINA;i+=2)p+='<span class="pip '+(i<S.stam?'':'out')+'"></span>';
   document.getElementById('stamTag').innerHTML='ENERGY '+p;
   document.getElementById('bagBtn').innerText='Basket'+(S.bag.length?(' ('+S.bag.length+')'):'');
@@ -2151,7 +2927,9 @@ function loop(ts){
   await load();
   buildCollision();
   resize();updateHud();drawToolbar();
-  if(!S.started)openIntro();else paused=false;
+  if(!S.started)openIntro();
+  else if(S.delve&&!S.delve.over){paused=false;setTimeout(()=>{S.delve.foe?showFight():showRoom('Where you left off','The stair goes on.');},400);}
+  else {paused=false;setTimeout(showReports,900);}
   requestAnimationFrame(loop);
 })();
 </script>
