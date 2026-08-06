@@ -88,6 +88,7 @@
     <span class="stam mono" id="stamTag"></span>
   </div>
   <div class="right">
+    <button id="sndBtn" title="Sound">&#9834;</button>
     <button id="bagBtn">Basket</button>
     <button id="boardBtn">Board</button>
     <button id="menuBtn">Menu</button>
@@ -1179,6 +1180,8 @@ function buildNodes(){
               [FARM.x+4,FARM.y-3],[FARM.x+9,FARM.y-4],[FARM.x+15,FARM.y-3],
               [FARM.x+5,FARM.y+FARM.h+3],[FARM.x+12,FARM.y+FARM.h+2],[FARM.x+18,FARM.y+FARM.h+4]];
   for(let y=DOOR.y-2;y<=DOOR.y+2;y++)for(let x=DOOR.x-2;x<=DOOR.x+2;x++)delete out[x+','+y];
+  for(let y=HIDE.y-2;y<=HIDE.y+2;y++)for(let x=HIDE.x-2;x<=HIDE.x+3;x++)delete out[x+','+y];
+  for(let y=JETTY.y-2;y<=JETTY.y+2;y++)for(let x=JETTY.x-3;x<=JETTY.x+3;x++)delete out[x+','+y];
   near.forEach((p,i)=>{
     const k=['tree','tree','tree','stump','rock','rock','bush','reed','clay'][i%9];
     for(let d=0;d<3;d++){
@@ -1247,6 +1250,8 @@ function buildCollision(){
   });
   if(S&&S.built)S.built.forEach(b=>{for(let y=b.y;y<b.y+b.h;y++)for(let x=b.x;x<b.x+b.w;x++)blk(x,y);});
   blk(DOOR.x,DOOR.y);
+  for(let y=HIDE.y-1;y<=HIDE.y+1;y++)for(let x=HIDE.x-1;x<=HIDE.x+2;x++)blocked.delete(key(x,y));
+  for(let y=JETTY.y-1;y<=JETTY.y+1;y++)for(let x=JETTY.x-1;x<=JETTY.x+2;x++)blocked.delete(key(x,y));
   Object.values(BLD).forEach(b=>{for(let y=b.y;y<b.y+b.h;y++)for(let x=b.x;x<b.x+b.w;x++)blk(x,y);});
   TREES.forEach(([x,y])=>blk(x,y));
   blk(WELL.x,WELL.y);blk(TABLE.x,TABLE.y);
@@ -1687,6 +1692,38 @@ function draw(){
   ctx.fillText('the table',tx+16,ty+2);
   /* depth-sorted buildings, trees, folk, player */
   const layer=[];
+  /* the hunter's hide, up at the treeline */
+  {
+    const hx=HIDE.x*TILE,hy=HIDE.y*TILE;
+    layer.push({y:hy+30,f:()=>{
+      ctx.fillStyle='rgba(0,0,0,0.30)';ctx.beginPath();ctx.ellipse(hx+16,hy+30,20,6,0,0,7);ctx.fill();
+      ctx.fillStyle='#4A3A28';
+      ctx.fillRect(hx-2,hy+4,5,26);ctx.fillRect(hx+29,hy+4,5,26);
+      ctx.fillStyle='#5A4632';ctx.fillRect(hx-8,hy-14,48,20);
+      ctx.fillStyle='#6E5638';ctx.fillRect(hx-8,hy-14,48,4);
+      ctx.fillStyle='#2A2118';ctx.fillRect(hx+2,hy-8,28,7);
+      ctx.fillStyle='#3E6A3A';
+      for(let i=0;i<6;i++)ctx.fillRect(hx-8+i*8,hy-18,6,6);
+      ctx.fillStyle='rgba(237,230,214,0.55)';ctx.font='9px Inter';ctx.textAlign='center';
+      ctx.fillText('the hide',hx+16,hy-24);
+    }});
+  }
+  /* the jetty on the river */
+  {
+    const jx=JETTY.x*TILE,jy=JETTY.y*TILE;
+    layer.push({y:jy+20,f:()=>{
+      for(let i=0;i<5;i++){
+        ctx.fillStyle=i%2?'#6E5638':'#5A4632';
+        ctx.fillRect(jx+i*14-8,jy,13,34);
+      }
+      ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(jx-8,jy+30,70,4);
+      ctx.fillStyle='#4A3A28';ctx.fillRect(jx-6,jy+34,5,10);ctx.fillRect(jx+52,jy+34,5,10);
+      ctx.fillStyle='#5A4632';ctx.fillRect(jx+44,jy-18,3,22);
+      ctx.fillStyle='#C8C4BC';ctx.fillRect(jx+46,jy-17,14,1);
+      ctx.fillStyle='rgba(237,230,214,0.55)';ctx.font='9px Inter';ctx.textAlign='center';
+      ctx.fillText('the jetty',jx+22,jy-24);
+    }});
+  }
   /* the door in the hillside */
   {
     const dx=DOOR.x*TILE,dy=DOOR.y*TILE;
@@ -1985,7 +2022,7 @@ window.addEventListener('keydown',e=>{
       const r=roomAt(S.dg.rx,S.dg.ry);
       const alive=r?r.foes.filter(f=>f.hp>0).length:0;
       if(r&&r.chest&&!r.chest.open&&Math.hypot(r.chest.x-S.dg.px-16,r.chest.y-S.dg.py-20)<40){
-        r.chest.open=true;
+        r.chest.open=true;SFX.chest();
         for(let i=0;i<3;i++){const t=depthLoot();S.dg.loot[t.item]=(S.dg.loot[t.item]||0)+t.n;}
         toast('The chest gives up what it has.');save();return;
       }
@@ -1995,7 +2032,7 @@ window.addEventListener('keydown',e=>{
         const keep=S.dg.loot, dep=S.dg.depth;
         enterDeep(cls,mates);
         S.dg.loot=keep;S.dg.depth=dep+1;
-        toast('Deeper. Level '+S.dg.depth+'.');
+        SFX.deeper();toast('Deeper. Level '+S.dg.depth+'.');
         return;
       }
       dgSwing();return;
@@ -2470,16 +2507,10 @@ function nearest(){
     const d2=Math.hypot(b.door.x*TILE-S.px,(b.door.y)*TILE-S.py);
     if(d2<bd){bd=d2;best={type:'in',at:id};}
   });
-  /* the river runs down the east side */
-  if(Math.floor(S.px/TILE)>=RIVER_X-3){
-    const dr=Math.abs(S.px/TILE-(RIVER_X-1))*TILE;
-    if(dr<bd){bd=dr;best={type:'fish'};}
-  }
-  /* the treeline, north of everything */
-  if(Math.floor(S.py/TILE)<14){
-    const dh=Math.abs(S.py/TILE-12)*TILE;
-    if(dh<bd){bd=dh;best={type:'hunt'};}
-  }
+  const dj=Math.hypot(JETTY.x*TILE-S.px,JETTY.y*TILE-S.py);
+  if(dj<bd){bd=dj;best={type:'fish'};}
+  const dhh=Math.hypot(HIDE.x*TILE-S.px,HIDE.y*TILE-S.py);
+  if(dhh<bd){bd=dhh;best={type:'hunt'};}
   ['kitchen','hall'].forEach(id=>{
     const b=BLD[id];if(!b)return;
     const dq=Math.hypot(b.door.x*TILE-S.px,(b.door.y)*TILE-S.py);
@@ -2511,8 +2542,8 @@ function hintText(){
     if(n.type==='supply')return 'The Supply House — go in  (E)';
     if(n.type==='door')return 'A door in the hillside  (E)';
     if(n.type==='in')return 'Go inside  (E)';
-    if(n.type==='fish')return 'Fish the river  (E)';
-    if(n.type==='hunt')return 'Take the gun to the treeline  (E)';
+    if(n.type==='fish')return 'Fish from the jetty  (E)';
+    if(n.type==='hunt')return 'Wait in the hide  (E)  — 3 vigour';
     if(n.type==='stock')return 'See to the animals  (E)';
     if(n.type==='craft')return 'Go inside  (E)';
     if(n.type==='bed')return 'Turn in for the night  (E)';
@@ -2548,7 +2579,7 @@ function openEat(){
   document.querySelectorAll('[data-eat]').forEach(b=>b.onclick=async()=>{
     const it=b.dataset.eat;
     if(!bagTake(it,1))return;
-    S.stam=Math.min(STAMINA,S.stam+EATS[it]);
+    S.stam=Math.min(STAMINA,S.stam+EATS[it]);SFX.eat();
     await save();updateHud();toast(it+' — that helps.');openEat();
   });
   document.getElementById('closeB').onclick=close;
@@ -2561,7 +2592,7 @@ function interact(){
   const n=nearest();
   if(n){
     if(n.type==='folk')return openTalk(n.f);
-    if(n.type==='well'){S.cans=canCap();drawToolbar();toast('Watering can filled');save();return;}
+    if(n.type==='well'){S.cans=canCap();drawToolbar();SFX.water();toast('Watering can filled');save();return;}
     if(n.type==='table')return openTable();
     if(n.type==='board'){if(enterInside('hall'))return;return openBoard();}
     if(n.type==='supply'){if(enterInside('supply'))return;return openSupply();}
@@ -2579,6 +2610,7 @@ function interact(){
     const K=NODEKIND[nd.k];
     if(K.tool!=='hand'&&tool.id!==K.tool){toast('You need the '+(K.tool==='axe'?'axe':'pick')+' for that.');return;}
     if(!spend(toolStam(K.tool,K.stam)))return;
+    if(K.tool==='axe')SFX.chop(); else if(K.tool==='pick')SFX.mine(); else SFX.pick();
     const got=K.n+(hashStr('g'+t.x+t.y+S.day)%2)+toolBonus(K.tool);
     bagAdd(K.item,got);
     nd.cut=S.day+K.regrow;
@@ -2590,7 +2622,7 @@ function interact(){
   if(tool.id==='hand'){
     if(ripe(p)){
       const c=CROPS[p.crop];
-      bagAdd(c.name,1);
+      bagAdd(c.name,1);SFX.reap();
       if(c.regrow){p.stage=c.days-c.regrow;p.wet=false;}
       else S.farm[key(t.x,t.y)]={till:true,wet:false};
       save();
@@ -2601,13 +2633,13 @@ function interact(){
   if(tool.id==='hoe'){
     if(p&&p.till)return;
     if(!spend(1))return;
-    S.farm[key(t.x,t.y)]={till:true,wet:false};save();return;
+    S.farm[key(t.x,t.y)]={till:true,wet:false};SFX.till();save();return;
   }
   if(tool.id==='can'){
     if(!p||!p.till||p.wet)return;
     if(S.cans<=0){toast('The can is empty — fill it at the well');return;}
     if(!spend(1))return;
-    S.cans--;p.wet=true;drawToolbar();save();return;
+    S.cans--;p.wet=true;SFX.water();drawToolbar();save();return;
   }
   if(tool.id==='seed'){
     const s=selectedSeed();
@@ -2620,7 +2652,7 @@ function interact(){
     }
     if(!spend(1))return;
     if(!bagTake(s,1))return;
-    p.crop=SEED_OF[s];p.stage=0;
+    p.crop=SEED_OF[s];p.stage=0;SFX.plant();
     drawToolbar();save();return;
   }
 }
@@ -2729,6 +2761,7 @@ function openCraft(at,station){
       const own=mine&&r.career===mine;
       payFor(r.cost);
       const n=r.n+(own?1:0);                 /* your own trade goes further */
+      SFX.craft();
       bagAdd(r.into,n);
       S.standing+=1;
       await save();
@@ -2755,6 +2788,8 @@ function openCraft(at,station){
    but whatever you carry up, you keep.
    ============================================================ */
 const DOOR={x:34,y:86};
+const HIDE={x:44,y:11};      /* the hunter's hide at the treeline */
+const JETTY={x:100,y:46};    /* the fishing jetty on the river */
 const CLASSES=[
   {id:'fighter',name:'Fighter', hp:26, hit:2, dmg:8,  heal:0, kit:'a notched sword and a dented shield',
    quip:'You have swung a scythe. It is not so different.'},
@@ -2972,7 +3007,7 @@ function openFish(){
       draw('The float sits still.','Wait for it.');
       const wait=900+Math.random()*3200;
       timer=setTimeout(()=>{
-        bite=true;t0=Date.now();
+        bite=true;t0=Date.now();SFX.bite();
         draw('The float goes under.','NOW.');
         setTimeout(()=>{if(bite){bite=false;cast=false;draw('It spat the hook.','Too slow. It happens.');}},1100);
       },wait);
@@ -2986,7 +3021,7 @@ function openFish(){
       const bag=[];pool.forEach(f=>{for(let i=0;i<f.w;i++)bag.push(f);});
       const got=bag[Math.floor(Math.random()*bag.length)];
       const n=(quick<420?2:1);
-      bagAdd(got.n,n);await save();
+      bagAdd(got.n,n);SFX.splash();await save();
       draw(got.junk?'An old boot.':(n>1?'Two '+got.n.toLowerCase()+'!':'A '+got.n.toLowerCase()+'.'),
            got.junk?'Somebody has been here before you.':(quick<420?'Struck like lightning.':'Landed neatly.'));
     };
@@ -3027,7 +3062,7 @@ function openHunt(){
       +'<button id="outB">Head back</button></div>');
     document.getElementById('fireB').onclick=()=>{
       const took=Date.now()-shown;
-      shots--;
+      shots--;SFX.shot();
       if(run)clearTimeout(run);
       if(took<lead){
         bagged[tgt.n+' meat']=(bagged[tgt.n+' meat']||0)+tgt.meat;
@@ -3153,19 +3188,19 @@ function doAttack(pi,ti,kind){
   }else if(roll===20){
     const dmg=dR(c.dmg)+c.dmg+4;
     f.hp-=dmg;
-    bLog(CRIT[dR(CRIT.length)-1].replaceAll('{a}',name).replaceAll('{t}',tname)+'  ('+dmg+')');
+    bLog(CRIT[dR(CRIT.length)-1].replaceAll('{a}',name).replaceAll('{t}',tname)+'  ('+dmg+')');SFX.crit();
   }else if(roll+bonus>=11){
     let dmg=dR(c.dmg)+2;
     if(kind==='skill')dmg=Math.round(dmg*1.6);
     if(f.guard>0)dmg=Math.round(dmg*0.5);
     f.hp-=dmg;
-    bLog(name+' rolls '+roll+' — '+(kind==='skill'?sk.n:'hits')+' for '+dmg+'.');
+    bLog(name+' rolls '+roll+' — '+(kind==='skill'?sk.n:'hits')+' for '+dmg+'.');SFX.hit();
     if(kind==='skill'&&p.cls==='fighter'){
       liveFoes().forEach(o=>{if(o!==f){const s=Math.ceil(dmg*0.4);o.hp-=s;}});
       bLog('The swing carries through the rest of them.');
     }
   }else{
-    bLog(MISS[dR(MISS.length)-1].replaceAll('{a}',name).replaceAll('{t}',tname)+'  (rolled '+roll+')');
+    bLog(MISS[dR(MISS.length)-1].replaceAll('{a}',name).replaceAll('{t}',tname)+'  (rolled '+roll+')');SFX.miss();
   }
   if(f.hp<=0){
     bLog(FOE_ART[f.k].n+' has had enough.');
@@ -3236,9 +3271,9 @@ function foeTurn(i){
     let dmg=dR(A.dmg)+2;
     if(t.guard>0){dmg=Math.round(dmg*0.45);t.guard--;bLog(t.name+' takes it on the guard.');}
     t.hp-=dmg;
-    bLog(A.n+' catches '+t.name+' for '+dmg+'.');
+    bLog(A.n+' catches '+t.name+' for '+dmg+'.');SFX.hurt();
     if(t.hp<=0){t.hp=0;t.down=true;t.ref.faints++;
-      bLog(t.name+' '+FAINTS[dR(FAINTS.length)-1]+'.');}
+      bLog(t.name+' '+FAINTS[dR(FAINTS.length)-1]+'.');SFX.down();}
   }else{
     bLog(A.n+' swipes at '+t.name+' and misses.');
   }
@@ -3253,7 +3288,7 @@ function endBattle(won){
   const r=roomAt(D.rx,D.ry);
   if(won===true){
     B.foes.forEach(bf=>{if(bf.hp<=0&&bf.ref)bf.ref.hp=0;else if(bf.ref)bf.ref.hp=bf.hp;});
-    toast('Fight won.');
+    SFX.win();toast('Fight won.');
   }else if(won===false){
     S.battle=null;
     dgLeave(true);
@@ -3842,6 +3877,213 @@ function drawDeep(){
   }
 }
 
+
+/* ============================================================
+   SOUND — written in code, no files. Warm above ground,
+   close and uneasy below, and something else again in a fight.
+   ============================================================ */
+const AKEY='greenhollow-audio';
+const AU={ctx:null,master:null,musicGain:null,sfxGain:null,started:false,
+  track:null,nextNote:0,step:0,timer:null,voices:[]};
+function audioOn(){try{return localStorage.getItem(AKEY)!=='off';}catch(e){return true;}}
+function setAudioOn(v){
+  try{localStorage.setItem(AKEY,v?'on':'off');}catch(e){}
+  if(AU.master)AU.master.gain.value=v?0.85:0;
+  if(v)audioStart();
+}
+function A(){
+  if(AU.ctx)return AU.ctx;
+  try{
+    const C=window.AudioContext||window.webkitAudioContext;
+    if(!C)return null;
+    AU.ctx=new C();
+    AU.master=AU.ctx.createGain();AU.master.gain.value=audioOn()?0.85:0;
+    AU.master.connect(AU.ctx.destination);
+    AU.musicGain=AU.ctx.createGain();AU.musicGain.gain.value=0.32;AU.musicGain.connect(AU.master);
+    AU.sfxGain=AU.ctx.createGain();AU.sfxGain.gain.value=0.85;AU.sfxGain.connect(AU.master);
+  }catch(e){AU.ctx=null;}
+  return AU.ctx;
+}
+function note(freq,when,dur,opt){
+  const c=A();if(!c||!audioOn())return;
+  opt=opt||{};
+  const o=c.createOscillator(),g=c.createGain();
+  o.type=opt.type||'triangle';
+  o.frequency.setValueAtTime(freq,when);
+  if(opt.glide)o.frequency.exponentialRampToValueAtTime(Math.max(20,opt.glide),when+dur);
+  const vol=opt.gain||0.15;
+  g.gain.setValueAtTime(0.0001,when);
+  g.gain.exponentialRampToValueAtTime(vol,when+(opt.atk||0.02));
+  g.gain.exponentialRampToValueAtTime(0.0001,when+dur);
+  o.connect(g);g.connect(opt.sfx?AU.sfxGain:AU.musicGain);
+  o.start(when);o.stop(when+dur+0.03);
+  return o;
+}
+function noise(when,dur,opt){
+  const c=A();if(!c||!audioOn())return;
+  opt=opt||{};
+  const n=Math.max(1,Math.floor(c.sampleRate*dur));
+  const buf=c.createBuffer(1,n,c.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,opt.curve||1);
+  const s=c.createBufferSource();s.buffer=buf;
+  const f=c.createBiquadFilter();f.type=opt.filter||'bandpass';
+  f.frequency.value=opt.freq||900;f.Q.value=opt.q||1;
+  const g=c.createGain();g.gain.value=opt.gain||0.2;
+  s.connect(f);f.connect(g);g.connect(AU.sfxGain);
+  s.start(when);
+}
+/* ---- the tunes. numbers are semitones from A2; null is a rest ---- */
+const HZ=n=>110*Math.pow(2,n/12);
+const TRACKS={
+  village:{bpm:104,wave:'triangle',bass:'sine',
+    lead:[12,16,19,16, 21,19,16,12, 14,17,21,17, 19,17,14,null,
+          12,16,19,24, 21,19,16,19, 17,14,12,14, 16,null,12,null],
+    bassline:[0,null,7,null, 5,null,7,null, 2,null,9,null, 7,null,7,null,
+              0,null,7,null, 5,null,0,null, 2,null,7,null, 0,null,null,null]},
+  night:{bpm:66,wave:'sine',bass:'sine',
+    lead:[12,null,16,null, 19,null,16,null, 14,null,17,null, 16,null,null,null,
+          12,null,15,null, 19,null,15,null, 12,null,10,null, 12,null,null,null],
+    bassline:[0,null,null,null, 5,null,null,null, 3,null,null,null, 7,null,null,null,
+              0,null,null,null, 5,null,null,null, 3,null,null,null, 0,null,null,null]},
+  harvest:{bpm:120,wave:'square',bass:'triangle',
+    lead:[12,14,16,19, 21,19,16,14, 16,19,21,24, 21,19,16,null,
+          17,19,21,24, 26,24,21,19, 16,19,16,12, 14,16,12,null],
+    bassline:[0,7,0,7, 5,0,5,0, 2,9,2,9, 7,7,0,null,
+              5,0,5,0, 3,10,3,10, 0,7,0,7, 0,null,0,null]},
+  deep:{bpm:76,wave:'sine',bass:'sine',
+    lead:[12,null,13,null, null,null,10,null, 8,null,null,null, 10,null,null,null,
+          12,null,15,null, null,null,13,null, 10,null,8,null, null,null,null,null],
+    bassline:[0,null,null,null, 0,null,null,null, -2,null,null,null, -2,null,null,null,
+              -4,null,null,null, -4,null,null,null, -5,null,null,null, 0,null,null,null]},
+  battle:{bpm:152,wave:'sawtooth',bass:'square',
+    lead:[12,12,15,12, 17,15,12,10, 12,12,15,17, 19,17,15,12,
+          13,13,17,13, 20,17,13,10, 12,15,17,20, 19,17,15,12],
+    bassline:[0,0,7,0, 0,0,7,0, -2,-2,5,-2, -2,-2,5,-2,
+              1,1,8,1, 1,1,8,1, 0,0,7,0, 0,7,0,null]},
+};
+function audioStart(){
+  const c=A();if(!c)return;
+  if(c.state==='suspended')c.resume();
+  if(AU.started)return;
+  AU.started=true;
+  AU.nextNote=c.currentTime+0.1;AU.step=0;
+  AU.timer=setInterval(scheduler,60);
+}
+function wantTrack(){
+  if(S&&S.battle)return 'battle';
+  if(S&&S.scene==='deep')return 'deep';
+  if(S&&S.harvestMood&&Date.now()<S.harvestMood)return 'harvest';
+  const h=S?S.min/60:12;
+  if(h<6.5||h>=20)return 'night';
+  return 'village';
+}
+function scheduler(){
+  const c=A();if(!c||!audioOn())return;
+  const want=wantTrack();
+  if(want!==AU.track){AU.track=want;AU.step=0;}
+  const T=TRACKS[AU.track]||TRACKS.village;
+  const spb=60/T.bpm/2;
+  while(AU.nextNote<c.currentTime+0.3){
+    const i=AU.step%T.lead.length;
+    const n=T.lead[i], b=T.bassline[i%T.bassline.length];
+    if(n!==null&&n!==undefined)
+      note(HZ(n+12),AU.nextNote,spb*1.7,{type:T.wave,gain:AU.track==='battle'?0.10:0.085});
+    if(b!==null&&b!==undefined)
+      note(HZ(b),AU.nextNote,spb*2.4,{type:T.bass,gain:0.13});
+    /* a little percussion below ground and in a fight */
+    if(AU.track==='battle'&&i%4===0)noise(AU.nextNote,0.09,{freq:180,q:1.4,gain:0.16});
+    if(AU.track==='battle'&&i%4===2)noise(AU.nextNote,0.05,{freq:2600,q:2,gain:0.07});
+    if(AU.track==='deep'&&i%8===0)noise(AU.nextNote,0.5,{freq:90,q:0.8,gain:0.10,curve:2});
+    AU.nextNote+=spb;AU.step++;
+  }
+}
+function fanfare(kind){
+  const c=A();if(!c||!audioOn())return;
+  const t=c.currentTime;
+  const seq=({
+    win:[[12,0],[16,0.10],[19,0.20],[24,0.30],[19,0.46],[24,0.56]],
+    lose:[[12,0],[10,0.16],[7,0.32],[3,0.50]],
+    level:[[12,0],[19,0.09],[24,0.18],[28,0.30]],
+    build:[[7,0],[12,0.10],[16,0.20]],
+  })[kind]||[];
+  seq.forEach(([n,dt])=>note(HZ(n+12),t+dt,0.42,{type:'triangle',gain:0.16}));
+}
+/* ---- the noises things make ---- */
+const SFX={
+  _t:0,
+  _throttle(ms){const n=Date.now();if(n-this._t<ms)return false;this._t=n;return true;},
+  step(){const c=A();if(!c)return;if(!this._throttle(280))return;
+    noise(c.currentTime,0.05,{freq:240+Math.random()*90,q:1.3,gain:0.05});},
+  till(){const c=A();if(!c)return;
+    noise(c.currentTime,0.14,{freq:320,q:0.8,gain:0.22,curve:1.6});
+    note(HZ(-2),c.currentTime,0.10,{type:'sine',gain:0.08,sfx:true});},
+  plant(){const c=A();if(!c)return;
+    note(HZ(19),c.currentTime,0.09,{type:'sine',gain:0.10,sfx:true});
+    note(HZ(24),c.currentTime+0.07,0.14,{type:'sine',gain:0.09,sfx:true});},
+  water(){const c=A();if(!c)return;
+    noise(c.currentTime,0.34,{freq:1500,q:0.6,gain:0.13,curve:0.6,filter:'lowpass'});
+    note(HZ(31),c.currentTime,0.20,{type:'sine',gain:0.05,glide:HZ(24),sfx:true});},
+  reap(){const c=A();if(!c)return;
+    noise(c.currentTime,0.10,{freq:900,q:1.2,gain:0.14});
+    note(HZ(21),c.currentTime+0.02,0.16,{type:'triangle',gain:0.11,sfx:true});
+    note(HZ(28),c.currentTime+0.10,0.20,{type:'triangle',gain:0.09,sfx:true});
+    if(S)S.harvestMood=Date.now()+9000;},
+  chop(){const c=A();if(!c)return;
+    noise(c.currentTime,0.13,{freq:420,q:1.1,gain:0.26,curve:2});
+    note(HZ(-5),c.currentTime,0.10,{type:'square',gain:0.07,sfx:true});},
+  mine(){const c=A();if(!c)return;
+    noise(c.currentTime,0.10,{freq:2200,q:2.4,gain:0.20});
+    noise(c.currentTime+0.03,0.16,{freq:300,q:0.9,gain:0.16,curve:2});},
+  pick(){const c=A();if(!c)return;
+    note(HZ(26),c.currentTime,0.07,{type:'sine',gain:0.10,sfx:true});},
+  craft(){const c=A();if(!c)return;
+    [0,0.09,0.18].forEach((d,i)=>noise(c.currentTime+d,0.09,{freq:1400-i*300,q:2,gain:0.16}));
+    note(HZ(24),c.currentTime+0.24,0.26,{type:'triangle',gain:0.12,sfx:true});},
+  build(){fanfare('build');},
+  eat(){const c=A();if(!c)return;
+    note(HZ(14),c.currentTime,0.12,{type:'sine',gain:0.10,glide:HZ(19),sfx:true});},
+  sleep(){const c=A();if(!c)return;
+    note(HZ(12),c.currentTime,1.1,{type:'sine',gain:0.11,glide:HZ(0),sfx:true});},
+  wake(){const c=A();if(!c)return;
+    note(HZ(12),c.currentTime,0.5,{type:'sine',gain:0.09,glide:HZ(24),sfx:true});},
+  door(){const c=A();if(!c)return;
+    noise(c.currentTime,0.22,{freq:260,q:1.6,gain:0.14,curve:1.4});
+    note(HZ(2),c.currentTime,0.20,{type:'sawtooth',gain:0.05,glide:HZ(7),sfx:true});},
+  hit(){const c=A();if(!c)return;
+    noise(c.currentTime,0.10,{freq:700,q:1.1,gain:0.26,curve:2.2});
+    note(HZ(5),c.currentTime,0.09,{type:'square',gain:0.09,glide:HZ(-4),sfx:true});},
+  crit(){const c=A();if(!c)return;
+    noise(c.currentTime,0.15,{freq:900,q:0.9,gain:0.30,curve:2});
+    [12,19,24].forEach((n,i)=>note(HZ(n),c.currentTime+i*0.05,0.20,{type:'square',gain:0.11,sfx:true}));},
+  miss(){const c=A();if(!c)return;
+    noise(c.currentTime,0.16,{freq:2000,q:0.5,gain:0.10,curve:0.7});},
+  hurt(){const c=A();if(!c)return;
+    note(HZ(7),c.currentTime,0.22,{type:'sawtooth',gain:0.13,glide:HZ(-6),sfx:true});},
+  down(){const c=A();if(!c)return;
+    note(HZ(5),c.currentTime,0.5,{type:'sawtooth',gain:0.12,glide:HZ(-12),sfx:true});
+    noise(c.currentTime+0.1,0.3,{freq:200,q:0.8,gain:0.14,curve:2});},
+  chest(){const c=A();if(!c)return;
+    noise(c.currentTime,0.12,{freq:500,q:1.4,gain:0.16});
+    [12,16,19,24].forEach((n,i)=>note(HZ(n),c.currentTime+0.08+i*0.06,0.3,{type:'triangle',gain:0.12,sfx:true}));},
+  win(){fanfare('win');},
+  lose(){fanfare('lose');},
+  deeper(){fanfare('level');},
+  bite(){const c=A();if(!c)return;
+    note(HZ(24),c.currentTime,0.08,{type:'sine',gain:0.16,sfx:true});
+    note(HZ(31),c.currentTime+0.06,0.10,{type:'sine',gain:0.14,sfx:true});},
+  splash(){const c=A();if(!c)return;
+    noise(c.currentTime,0.30,{freq:900,q:0.5,gain:0.20,curve:1.2,filter:'lowpass'});},
+  shot(){const c=A();if(!c)return;
+    noise(c.currentTime,0.22,{freq:150,q:0.4,gain:0.34,curve:2.6,filter:'lowpass'});
+    noise(c.currentTime,0.07,{freq:3200,q:0.8,gain:0.16});},
+  no(){const c=A();if(!c)return;
+    note(HZ(7),c.currentTime,0.14,{type:'square',gain:0.08,glide:HZ(2),sfx:true});},
+  ok(){const c=A();if(!c)return;
+    note(HZ(19),c.currentTime,0.07,{type:'triangle',gain:0.09,sfx:true});},
+};
+window.addEventListener('pointerdown',()=>{const c=A();if(c&&c.state==='suspended')c.resume();audioStart();});
+window.addEventListener('keydown',()=>{const c=A();if(c&&c.state==='suspended')c.resume();audioStart();});
 /* ============================================================
    INSIDE — you walk in, and the equipment is really there.
    ============================================================ */
@@ -3901,12 +4143,14 @@ function insideSpec(id){
 }
 function enterInside(id){
   const sp=insideSpec(id);if(!sp)return false;
+  SFX.door();
   S.inside=id;
   S.ipx=(Math.floor(IW/2))*TILE;
   S.ipy=(IH-2)*TILE;
   save();return true;
 }
 function leaveInside(){
+  SFX.door();
   const b=BLD[S.inside];
   S.inside=null;
   if(b){S.px=b.door.x*TILE;S.py=(b.door.y+1)*TILE;}
@@ -4286,6 +4530,7 @@ function placeHere(x,y){
   if(!has(plan.cost)){toast('Not enough materials any more.');S.placing=null;return;}
   payFor(plan.cost);
   S.built.push({id:plan.id,x,y,w:plan.w,h:plan.h,day:S.day});
+  SFX.build();
   S.placing=null;
   S.standing+=3;
   toast(plan.name+' built. '+plan.gives);
@@ -4741,6 +4986,7 @@ async function checkGifts(){
   await save();
 }
 async function doSleep(){
+  SFX.sleep();
   paused=true;
   const grew=[];
   Object.keys(S.farm).forEach(k=>{
@@ -4752,6 +4998,7 @@ async function doSleep(){
   checkGifts();
   const stock=morningStock();
   const got=morningYield().concat(stock);
+  setTimeout(()=>SFX.wake(),700);
   if(got.length)setTimeout(()=>toast('Morning — '+got.join(' and ')+' collected'),1200);S.cans=Math.max(S.cans,0);
   S.needs=[];S.needsDay=0;
   await save();updateHud();drawToolbar();
@@ -4781,6 +5028,10 @@ function updateHud(){
   document.getElementById('stamTag').innerHTML='ENERGY '+p;
   document.getElementById('bagBtn').innerText='Basket'+(S.bag.length?(' ('+S.bag.length+')'):'');
 }
+function refreshSnd(){const b=document.getElementById('sndBtn');
+  if(b){b.innerHTML=audioOn()?'&#9834;':'&#9834;&#818;';b.style.opacity=audioOn()?'1':'0.45';}}
+document.getElementById('sndBtn').onclick=()=>{setAudioOn(!audioOn());refreshSnd();SFX.ok();};
+refreshSnd();
 document.getElementById('bagBtn').onclick=openBag;
 document.getElementById('boardBtn').onclick=openBoard;
 document.getElementById('menuBtn').onclick=openMenu;
