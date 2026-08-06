@@ -128,14 +128,14 @@ const BLD={
   forge   :{x:64,y:40,w:5,h:3,label:'Sana & Andrew\'s',wall:'#5A5248',roof:'#8C5A4A',roof2:'#7A4E40'},
   hives   :{x:74,y:24,w:5,h:3,label:'The Hives',      wall:'#5E5A44',roof:'#C9A44E',roof2:'#B08F3C'},
   hall    :{x:60,y:48,w:7,h:4,label:'The Commons Hall',wall:'#4E4638',roof:'#5B7A8C',roof2:'#4E6A7A'},
-  c1:{x:46,y:18,w:4,h:3,label:'',wall:'#5E4A3A',roof:'#7A5A44',roof2:'#6A4E3A',cot:true},
-  c2:{x:52,y:18,w:4,h:3,label:'',wall:'#4E5A46',roof:'#5E7456',roof2:'#52664C',cot:true},
-  c3:{x:58,y:18,w:4,h:3,label:'',wall:'#54506A',roof:'#665E86',roof2:'#585078',cot:true},
-  c4:{x:64,y:18,w:4,h:3,label:'',wall:'#5A5248',roof:'#8C6A3C',roof2:'#7A5C32',cot:true},
-  c5:{x:70,y:18,w:4,h:3,label:'',wall:'#4E5A62',roof:'#5E7482',roof2:'#526674',cot:true},
-  c6:{x:76,y:18,w:4,h:3,label:'',wall:'#66504A',roof:'#8C6250',roof2:'#7A5444',cot:true},
-  c7:{x:82,y:18,w:4,h:3,label:'',wall:'#4A5A54',roof:'#5E7A70',roof2:'#526A62',cot:true},
-  c8:{x:88,y:18,w:4,h:3,label:'',wall:'#5E5448',roof:'#7A6A50',roof2:'#6A5C46',cot:true},
+  c1:{x:46,y:18,w:5,h:3,label:'',wall:'#6B5442',roof:'#8C5A44',roof2:'#784C3A',cot:true},
+  c2:{x:53,y:18,w:4,h:3,label:'',wall:'#4E5A46',roof:'#5E7456',roof2:'#52664C',cot:true},
+  c3:{x:59,y:18,w:4,h:3,label:'',wall:'#54506A',roof:'#665E86',roof2:'#585078',cot:true},
+  c4:{x:65,y:18,w:5,h:3,label:'',wall:'#6A5A48',roof:'#B08A3C',roof2:'#977632',cot:true},
+  c5:{x:72,y:18,w:4,h:3,label:'',wall:'#4E5A62',roof:'#4E7A96',roof2:'#436A82',cot:true},
+  c6:{x:78,y:18,w:4,h:3,label:'',wall:'#66504A',roof:'#A0604C',roof2:'#8A5140',cot:true},
+  c7:{x:84,y:18,w:5,h:3,label:'',wall:'#4A5A54',roof:'#4F8474',roof2:'#437065',cot:true},
+  c8:{x:91,y:18,w:4,h:3,label:'',wall:'#5E5448',roof:'#8A7448',roof2:'#77643D',cot:true},
 };
 Object.keys(BLD).forEach(k=>{const b=BLD[k];b.id=k;b.door={x:b.x+Math.floor(b.w/2),y:b.y+b.h};});
 const WELL={x:58,y:44};
@@ -933,6 +933,10 @@ function buildItemSprites(){
   put('Cloth',  ['KKKKKKKK','KuUUuuUK','KuuuuuuK','KUuuUuuK','KuuuuuuK','KuUuuUuK','KuuuuuuK','KKKKKKKK']);
   put('Yarn',   ['..KKKK..','.KuUUuK.','KuUuuUuK','KuuUuuUK','KUuuUuuK','KuUuuuuK','.KuuuuK.','..KKKK..']);
   put('Wool',   ['..KKKK..','.KcCCcK.','KcCCCCcK','KcCCCCcK','KcCCCCcK','.KcccK..','..KkkK..','..K..K..']);
+  put('Berries',['..g.g...','..g.g...','.KpKpK..','KpPpPpK.','KpppppK.','.KpPpK..','..KpK...','...K....']);
+  put('Sage',   ['...K....','..KvK...','.KvGvK..','KvGGGvK.','.KvGvK..','..KvK...','..KgK...','..KKK...']);
+  put('Mint',   ['..K.K...','.KGKGK..','KGGKGGK.','.KGGGK..','KGGKGGK.','.KGKGK..','..KgK...','..KKK...']);
+  put('Thyme',  ['..K.K.K.','.KvKvKv.','KvvKvvKv','.KvvvKv.','KvvKvvK.','.KvKvK..','..KgK...','..KKK...']);
   put('Flour',  ['..KKKK..','.KcccK..','KccccccK','KcCCccK.','KccccccK','KccccccK','.KccccK.','..KKKK..']);
   put('Bread',  ['........','..KKKK..','.KsSSsK.','KsSSSSsK','KsSsSsSK','KsSSSSsK','.KssssK.','..KKKK..']);
   put('Cheese', ['..KKKK..','.KeEEeK.','KeEEEEeK','KeEeEEeK','KeEEEeeK','KeeEeeeK','.KeeeeK.','..KKKK..']);
@@ -1793,15 +1797,36 @@ function draw(){
     /* door */
     const dr=doorSprite();
     ctx.drawImage(dr,b.door.x*TILE+4,Y+H-dr.height+4);
-    if(b.label){
+    const nameOn=b.label||(b.cot?cottageFamily(b.id):'');
+    if(nameOn){
       ctx.font='10px Inter';ctx.textAlign='center';
-      const w=ctx.measureText(b.label).width;
+      const w=ctx.measureText(nameOn).width;
       ctx.fillStyle='rgba(12,20,14,0.62)';
       ctx.fillRect(X+Wd/2-w/2-6,Y-46,w+12,15);
       ctx.fillStyle='rgba(23,19,16,0.9)';
       ctx.fillRect(X+Wd/2-w/2-6,Y-32,w+12,1);
       ctx.fillStyle='rgba(237,230,214,0.94)';
-      ctx.fillText(b.label,X+Wd/2,Y-35);
+      ctx.fillText(nameOn,X+Wd/2,Y-35);
+    }
+    if(b.cot){
+      /* a signpost by the gate, and a little garden */
+      const sx=X-14, sy=Y+H-6;
+      ctx.fillStyle='rgba(0,0,0,0.28)';ctx.fillRect(sx+1,sy+16,10,4);
+      ctx.fillStyle='#5A4632';ctx.fillRect(sx+4,sy,4,18);
+      ctx.fillStyle='#171310';ctx.fillRect(sx-6,sy-10,24,12);
+      ctx.fillStyle='#6E5638';ctx.fillRect(sx-5,sy-9,22,10);
+      ctx.fillStyle='rgba(237,230,214,0.55)';
+      const fam=cottageFamily(b.id)||'—';
+      for(let i=0;i<Math.min(4,fam.length/3);i++)ctx.fillRect(sx-2+i*5,sy-5,3,1);
+      /* window box, colour keyed to the house */
+      const bloom=['#E8D26A','#E8A8C0','#B8A0D8','#EDE6D6','#E07A6A','#8FC4E8'][hashStr(b.id)%6];
+      for(let i=0;i<Math.max(1,b.w-2);i++){
+        const wx=X+i*TILE+11,wy=Y+Math.round(H/2)+10;
+        ctx.fillStyle='#5A4632';ctx.fillRect(wx,wy,18,5);
+        ctx.fillStyle='#3E6A3A';ctx.fillRect(wx+1,wy-3,16,4);
+        ctx.fillStyle=bloom;
+        for(let k2=0;k2<4;k2++)ctx.fillRect(wx+2+k2*4,wy-5,3,3);
+      }
     }
     if(b.cot){
       ctx.fillStyle='#171310';ctx.fillRect(X+Wd-20,Y-42,13,16);
@@ -2133,6 +2158,19 @@ function indoors(f){
   const h=S.min/60;
   if(S.claimed===f.id)return false;
   return (h<7||h>=21.5);
+}
+function cottageFamily(id){
+  const here=FOLK.filter(f=>homeOf(f)===id&&!f.child);
+  if(!here.length)return '';
+  const surnames=[...new Set(here.map(f=>{
+    const p=String(f.name).split(' ');
+    return p.length>1?p[p.length-1]:p[0];
+  }))];
+  if(surnames.length===1){
+    const s=surnames[0];
+    return 'The '+s+(/[sxz]$|sh$|ch$/i.test(s)?'es':'s');
+  }
+  return surnames.slice(0,2).join(' & ');
 }
 function cottageLit(id){
   const h=S.min/60;
@@ -2593,22 +2631,22 @@ function interact(){
    Two steps, never more: what you dig up, what it becomes,
    and what you make from that.                              */
 const REFINE=[
-  {id:'ingot', at:'forge',     name:'Smelt iron',   into:'Iron',   n:1, cost:{Ore:2,Wood:1},    career:'smith',    hint:'Ore and a good fire.'},
-  {id:'brick', at:'forge',     name:'Fire bricks',  into:'Brick',  n:2, cost:{Clay:3,Wood:1},   career:'potter',   hint:'Riverbank clay, baked hard.'},
-  {id:'plank', at:'forge',     name:'Saw planks',   into:'Plank',  n:2, cost:{Wood:3},          career:'carpenter',hint:'Rough timber into something square.'},
-  {id:'cloth', at:'seedhouse', name:'Weave cloth',  into:'Cloth',  n:1, cost:{Fibre:3},         career:'weaver',   hint:'Reed fibre on the loom.'},
-  {id:'flour', at:'seedhouse', name:'Grind flour',  into:'Flour',  n:2, cost:{Wheat:2},         career:'miller',   hint:'The wheel does the work.'},
-  {id:'rope',  at:'seedhouse', name:'Twist rope',   into:'Rope',   n:1, cost:{Fibre:2,Cloth:1}, career:'weaver',   hint:'Stronger than it looks.'},
-  {id:'yarn',  at:'seedhouse', name:'Spin wool',    into:'Yarn',   n:2, cost:{Wool:2},          career:'weaver',   hint:'Off the sheep and onto the wheel.'},
-  {id:'wcloth',at:'seedhouse', name:'Weave woollen',into:'Cloth',  n:2, cost:{Yarn:2},          career:'weaver',   hint:'Warmer than the reed stuff.'},
-  {id:'feed',  at:'seedhouse', name:'Mill feed',    into:'Feed',   n:4, cost:{Wheat:2},         career:'miller',   hint:'What the animals actually want.'},
-  {id:'cheese',at:'kitchen',   name:'Press cheese', into:'Cheese', n:1, cost:{Milk:3},          career:'cook',     hint:'Milk, salt, and a fortnight of patience.'},
-  {id:'butter',at:'kitchen',   name:'Churn butter', into:'Butter', n:1, cost:{Milk:2},          career:'cook',     hint:'Arm-aching work.'},
-  {id:'bread', at:'kitchen',   name:'Bake bread',   into:'Bread',  n:3, cost:{Flour:2},         career:'baker',    hint:'The free shelf will not fill itself.'},
-  {id:'remedy',at:'hall',      name:'Make a remedy',into:'Remedy', n:2, cost:{Sage:1,Mint:1},   career:'healer',   hint:'Bitter, and it works.'},
-  {id:'salve', at:'hall',      name:'Boil a salve', into:'Salve',  n:1, cost:{Thyme:2,Butter:1},career:'healer',   hint:'For hands that have been in the deep.'},
-  {id:'stew',  at:'kitchen',   name:'Set a stew on', into:'Stew',  n:3, cost:{Meat:2,Carrot:1,Onion:1},career:'cook',hint:'Feeds whoever turns up.'},
-  {id:'leather',at:'forge',    name:'Tan leather',  into:'Leather',n:1, cost:{Hide:2,Sage:1},   career:'carpenter',hint:'Slow, and it smells.'},
+  {id:'ingot', at:'forge',     st:'furnace',name:'Smelt iron',   into:'Iron',   n:1, cost:{Ore:2,Wood:1},    career:'smith',    hint:'Ore and a good fire.'},
+  {id:'brick', at:'forge',     st:'furnace',name:'Fire bricks',  into:'Brick',  n:2, cost:{Clay:3,Wood:1},   career:'potter',   hint:'Riverbank clay, baked hard.'},
+  {id:'plank', at:'forge',     st:'bench',  name:'Saw planks',   into:'Plank',  n:2, cost:{Wood:3},          career:'carpenter',hint:'Rough timber into something square.'},
+  {id:'leather',at:'forge',    st:'bench',  name:'Tan leather',  into:'Leather',n:1, cost:{Hide:2,Sage:1},   career:'carpenter',hint:'Slow, and it smells.'},
+  {id:'cloth', at:'seedhouse', st:'loom',   name:'Weave cloth',  into:'Cloth',  n:1, cost:{Fibre:3},         career:'weaver',   hint:'Reed fibre on the loom.'},
+  {id:'yarn',  at:'seedhouse', st:'loom',   name:'Spin wool',    into:'Yarn',   n:2, cost:{Wool:2},          career:'weaver',   hint:'Off the sheep and onto the wheel.'},
+  {id:'wcloth',at:'seedhouse', st:'loom',   name:'Weave woollen',into:'Cloth',  n:2, cost:{Yarn:2},          career:'weaver',   hint:'Warmer than the reed stuff.'},
+  {id:'rope',  at:'seedhouse', st:'loom',   name:'Twist rope',   into:'Rope',   n:1, cost:{Fibre:2,Cloth:1}, career:'weaver',   hint:'Stronger than it looks.'},
+  {id:'flour', at:'seedhouse', st:'mill',   name:'Grind flour',  into:'Flour',  n:2, cost:{Wheat:2},         career:'miller',   hint:'The wheel does the work.'},
+  {id:'feed',  at:'seedhouse', st:'mill',   name:'Mill feed',    into:'Feed',   n:4, cost:{Wheat:2},         career:'miller',   hint:'What the animals actually want.'},
+  {id:'bread', at:'kitchen',   st:'oven',   name:'Bake bread',   into:'Bread',  n:3, cost:{Flour:2},         career:'baker',    hint:'The free shelf will not fill itself.'},
+  {id:'stew',  at:'kitchen',   st:'oven',   name:'Set a stew on',into:'Stew',   n:3, cost:{Meat:2,Carrot:1,Onion:1},career:'cook',hint:'Feeds whoever turns up.'},
+  {id:'cheese',at:'kitchen',   st:'churn',  name:'Press cheese', into:'Cheese', n:1, cost:{Milk:3},          career:'cook',     hint:'Milk, salt, and a fortnight of patience.'},
+  {id:'butter',at:'kitchen',   st:'churn',  name:'Churn butter', into:'Butter', n:1, cost:{Milk:2},          career:'cook',     hint:'Arm-aching work.'},
+  {id:'remedy',at:'hall',      st:'herbs',  name:'Make a remedy',into:'Remedy', n:2, cost:{Sage:1,Mint:1},   career:'healer',   hint:'Bitter, and it works.'},
+  {id:'salve', at:'hall',      st:'herbs',  name:'Boil a salve', into:'Salve',  n:1, cost:{Thyme:2,Butter:1},career:'healer',   hint:'For hands that have been in the deep.'},
 ];
 /* what your kit can become. tier 0 is what everyone starts with */
 const KIT={
@@ -2637,10 +2675,22 @@ function stationHere(){
   });
   return b||null;
 }
-function openCraft(at){
+const STATION_TITLE={furnace:'The furnace',bench:'The workbench',loom:'The loom',mill:'The millstone',
+  oven:'The ovens',churn:'The churn',herbs:'The drying rack',anvil:'The anvil',rack:'The tool rack'};
+const STATION_BLURB={
+  furnace:'Ore in, iron out. Clay in, brick out. Mind your eyebrows.',
+  bench:'Saw, plane, and tan. Everything square eventually.',
+  loom:'Fibre, wool and yarn. The shuttle does not stop for anybody.',
+  mill:'Grain to flour, grain to feed. The wheel turns whether you help or not.',
+  oven:'Hot enough to bake, hot enough to regret leaning on it.',
+  churn:'Milk, and a great deal of arm.',
+  herbs:'Bundles drying overhead. Bitter, mostly, and it works.',
+  anvil:'Where a tool stops being what it was.',
+  rack:'Everything you carry, and what it could become.'};
+function openCraft(at,station){
   paused=true;
   const mine=careerOf(S.claimed);
-  const recipes=REFINE.filter(r=>r.at===at);
+  const recipes=REFINE.filter(r=>r.at===at&&(!station||r.st===station));
   const rows=recipes.map(r=>{
     const can=has(r.cost);
     const own=mine&&r.career===mine;
@@ -2665,10 +2715,11 @@ function openCraft(at){
       +'<div class="hint">'+nxt.note+'</div><div class="hint">'+costs+'</div></div>'
       +'<button '+(can?'class="primary" ':'disabled ')+'data-kit="'+t+'">Upgrade</button></div>';
   }).join('');
-  OR('<h3>'+(at==='forge'?'The forge':'The workroom')+'</h3>'
-    +'<div class="hint" style="margin-bottom:10px;">Nothing is bought here either. Bring what you dug up and turn it into something the valley can use.</div>'
-    +'<h3 style="font-size:14px;margin:12px 0 6px;">Refining</h3>'+rows
-    +(at==='forge'?('<h3 style="font-size:14px;margin:16px 0 6px;">Your kit</h3>'
+  const showKit=(station==='anvil'||station==='rack');
+  OR('<h3>'+(STATION_TITLE[station]||(at==='forge'?'The forge':'The workroom'))+'</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">'+(STATION_BLURB[station]||'Bring what you dug up and turn it into something the valley can use.')+'</div>'
+    +(recipes.length?('<h3 style="font-size:14px;margin:12px 0 6px;">What this does</h3>'+rows):'')
+    +(showKit?('<h3 style="font-size:14px;margin:16px 0 6px;">Your kit</h3>'
       +'<div class="hint" style="margin-bottom:8px;">Better tools mean less puff and more in the basket. Yours to keep.</div>'+kitRows):'')
     +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
   document.querySelectorAll('[data-make]').forEach(b=>{if(b.disabled)return;
@@ -2682,7 +2733,7 @@ function openCraft(at){
       S.standing+=1;
       await save();
       toast('+'+n+' '+r.into+(own?' — your trade, so it went further':''));
-      openCraft(at);
+      openCraft(at,station);
     };});
   document.querySelectorAll('[data-kit]').forEach(b=>{if(b.disabled)return;
     b.onclick=async()=>{
@@ -2693,7 +2744,7 @@ function openCraft(at){
       if(t==='can')S.cans=Math.min(S.cans,canCap());
       await save();drawToolbar();
       toast(nxt.name+' — that will make a difference.');
-      openCraft(at);
+      openCraft(at,station);
     };});
   document.getElementById('closeB').onclick=close;
 }
@@ -2759,6 +2810,19 @@ const TREASURE=[
 ];
 function d(n){return 1+Math.floor(Math.random()*n);}
 function classById(id){return CLASSES.find(c=>c.id===id);}
+/* which of the deep places this level is — chosen once per descent */
+function depthOf(){
+  const D=S.dg;
+  if(!D)return DEPTHS[0];
+  if(!D.theme)D.theme=DEPTHS[hashStr('th'+D.depth+(D.seed||0))%DEPTHS.length].id;
+  return DEPTHS.find(x=>x.id===D.theme)||DEPTHS[0];
+}
+function depthLoot(){
+  const dp=depthOf();
+  const pool=(dp.loot||['Stone']).concat(['Berries']);
+  const item=pool[Math.floor(Math.random()*pool.length)];
+  return {item,n:1+Math.floor(Math.random()*3)};
+}
 
 function openDoor(){
   paused=true;
@@ -2809,258 +2873,6 @@ function openParty(cls){
     document.getElementById('backB').onclick=openDoor;
   };
   render();
-}
-function pickDepth(){
-  const seed=Date.now()+Math.floor(Math.random()*9999);
-  return DEPTHS[seed%DEPTHS.length];
-}
-function startDelve(cls,ids){
-  const me=meFolk();
-  const party=[{id:S.claimed||'me',name:me?firstName(me.name):(S.player.name||'you'),
-                cls,hp:classById(cls).hp,max:classById(cls).hp,you:true,faints:0,hits:0}];
-  /* whoever comes along gets whatever class you did not take */
-  const spare=CLASSES.filter(c=>c.id!==cls);
-  ids.forEach((id,i)=>{
-    const f=FOLK.find(x=>x.id===id);
-    const c=spare[i%spare.length];
-    party.push({id,name:firstName(f.name),cls:c.id,hp:c.hp,max:c.hp,you:false,faints:0,hits:0});
-  });
-  const depth=pickDepth();
-  /* the shape of the place is rolled fresh every time */
-  const plan=[];
-  const len=5+d(6);
-  for(let i=0;i<len;i++)plan.push(ROOMS[d(ROOMS.length)-1]);
-  plan.push('boss');
-  S.delve={party,room:1,rooms:plan.length,plan,depth:depth.id,depthName:depth.name,
-           log:['You go down into '+depth.name+'. '+depth.blurb],
-           loot:{},foe:null,boon:{aim:0,wind:0},over:false};
-  save();nextRoom();
-}
-function alive(p){return p.hp>0;}
-function depthOf(){return DEPTHS.find(x=>x.id===(S.delve&&S.delve.depth))||DEPTHS[0];}
-function depthLoot(){
-  const dp=depthOf();
-  const pool=dp.loot.concat(['Berries','Stone']);
-  const item=pool[d(pool.length)-1];
-  return {item,n:2+d(3)};
-}
-function nextRoom(){
-  const D=S.delve;
-  if(D.room>D.rooms){endDelve(true);return;}
-  const kind=D.plan?D.plan[D.room-1]:'fight';
-  if(kind==='find'){
-    const t=depthLoot();
-    D.loot[t.item]=(D.loot[t.item]||0)+t.n;
-    D.log.push('Room '+D.room+': a niche in the wall, and '+t.n+' '+t.item.toLowerCase()+' nobody has missed in years.');
-    D.room++;save();showRoom('You find something.','+'+t.n+' '+t.item);
-    return;
-  }
-  if(kind==='trap'){
-    const tr=TRAPS[d(TRAPS.length)-1];
-    const hit=D.party.filter(alive);
-    hit.forEach(p=>{p.hp-=d(tr.dmg);
-      if(p.hp<=0){p.faints++;D.log.push(p.name+' '+FAINTS[d(FAINTS.length)-1]+'.');}});
-    D.log.push('Room '+D.room+': '+tr.t);
-    D.room++;
-    if(!D.party.some(alive)){save();endDelve(false,true);return;}
-    save();showRoom(tr.t,tr.quip);return;
-  }
-  if(kind==='shrine'){
-    const sh=SHRINES[d(SHRINES.length)-1];
-    D.boon=D.boon||{aim:0,wind:0};
-    if(sh.boon==='wind'){D.party.forEach(p=>{p.max+=4;p.hp=Math.min(p.max,p.hp+8);});D.boon.wind++;}
-    else{D.boon.aim++;}
-    D.log.push('Room '+D.room+': '+sh.t);
-    D.room++;save();showRoom(sh.t,sh.say);return;
-  }
-  if(kind==='rest'){
-    D.party.forEach(p=>{if(p.hp<=0)p.hp=Math.ceil(p.max*0.5);else p.hp=Math.min(p.max,p.hp+d(8)+4);});
-    D.log.push('Room '+D.room+': somewhere dry enough to sit down.');
-    D.room++;save();showRoom('Somewhere dry enough to sit.','Everyone gets their wind back.');return;
-  }
-  if(kind==='fork'){
-    D.room++;save();
-    paused=true;
-    OR('<h3>The passage splits</h3>'
-      +'<div class="card"><div class="hint">One way is narrow and dry. The other is wider, and something has been along it.</div></div>'
-      +partyBar()
-      +'<div class="acts"><button class="primary" id="safeB">Take the narrow way</button>'
-      +'<button id="riskB">Take the wide one</button></div>');
-    document.getElementById('safeB').onclick=()=>{
-      const t=depthLoot();D.loot[t.item]=(D.loot[t.item]||0)+Math.ceil(t.n/2);
-      D.log.push('You took the narrow way. Slow, but nothing came at you.');
-      save();showRoom('The narrow way','It opens out eventually.');
-    };
-    document.getElementById('riskB').onclick=()=>{
-      const t=depthLoot();D.loot[t.item]=(D.loot[t.item]||0)+t.n*2;
-      D.party.filter(alive).forEach(p=>{p.hp-=d(6);
-        if(p.hp<=0){p.faints++;D.log.push(p.name+' '+FAINTS[d(FAINTS.length)-1]+'.');}});
-      D.log.push('You took the wide way. It cost you, and it paid.');
-      if(!D.party.some(alive)){save();endDelve(false,true);return;}
-      save();showRoom('The wide way','Worth it, on balance. Probably.');
-    };
-    return;
-  }
-  const dp=depthOf();
-  const name=dp.foes[d(dp.foes.length)-1];
-  const base=FOES.find(x=>x.n===name)||FOES[d(FOES.length)-1];
-  const boss=(kind==='boss');
-  const deeper=1+Math.floor(D.room/3);
-  D.foe={n:boss?dp.boss:name,
-         hp:boss?46:(base.hp+deeper*4), max:boss?46:(base.hp+deeper*4),
-         dmg:boss?14:(base.dmg+deeper), quip:boss?'It has been waiting, and it is not pleased.':base.quip, boss};
-  save();showFight();
-}
-function showRoom(title,sub){
-  paused=true;
-  const D=S.delve;
-  OR('<h3>'+esc(title)+'</h3>'
-    +'<div class="card"><strong>'+esc(sub)+'</strong>'
-    +'<div class="hint">'+esc(D.log[D.log.length-1]||'')+'</div></div>'
-    +partyBar()
-    +'<div class="acts"><button class="primary" id="onB">Deeper</button>'
-    +'<button id="outB">Back up the stairs</button></div>');
-  document.getElementById('onB').onclick=nextRoom;
-  document.getElementById('outB').onclick=()=>endDelve(false);
-}
-function partyBar(){
-  const D=S.delve;
-  return '<h3 style="font-size:14px;margin:12px 0 6px;">The party</h3>'
-    +D.party.map(p=>{
-      const c=classById(p.cls);
-      const pct=Math.max(0,Math.round(100*p.hp/p.max));
-      return '<div class="row"><div style="min-width:0;"><strong>'+esc(p.name)+'</strong>'
-        +(p.you?' <span class="hint" style="color:var(--green);">· you</span>':'')
-        +'<div class="hint">'+c.name+(p.hp<=0?' · out cold':'')+'</div>'
-        +'<div class="bar"><i style="width:'+pct+'%;background:'+(p.hp<=0?'var(--rose)':'var(--green)')+'"></i></div></div>'
-        +'<span class="hint">'+Math.max(0,p.hp)+'/'+p.max+'</span></div>';
-    }).join('');
-}
-function showFight(msg){
-  paused=true;
-  const D=S.delve,f=D.foe;
-  const pct=Math.max(0,Math.round(100*f.hp/f.max));
-  OR('<h3>'+(f.boss?'The bottom of '+(D.depthName||'the stair'):'Room '+D.room+' of '+(D.depthName||'the deep'))+'</h3>'
-    +'<div class="card"><strong>'+esc(f.n)+'</strong><div class="hint">'+esc(f.quip)+'</div>'
-    +'<div class="bar"><i style="width:'+pct+'%;background:var(--rose)"></i></div></div>'
-    +(msg?('<div class="card"><div class="hint">'+msg+'</div></div>'):'')
-    +partyBar()
-    +'<div class="acts"><button class="primary" id="atkB">Swing</button>'
-    +'<button id="runB">Run for the stairs</button></div>');
-  document.getElementById('atkB').onclick=doRound;
-  document.getElementById('runB').onclick=()=>{
-    S.delve.log.push('You all ran. Nobody talks about it.');
-    endDelve(false);
-  };
-}
-function doRound(){
-  const D=S.delve,f=D.foe;
-  let out=[];
-  /* your side */
-  D.party.filter(alive).forEach(p=>{
-    const c=classById(p.cls);
-    if(c.heal){
-      const down=D.party.filter(x=>x.hp<=0)[0];
-      if(down){down.hp=Math.ceil(down.max*0.35);
-        out.push('<strong>'+esc(p.name)+'</strong> gets '+esc(down.name)+' sitting up again');return;}
-      const hurt=D.party.filter(x=>x.hp>0&&x.hp<x.max).sort((a,b)=>a.hp-b.hp)[0];
-      if(hurt){const h=d(c.heal);hurt.hp=Math.min(hurt.max,hurt.hp+h);
-        out.push('<strong>'+esc(p.name)+'</strong> patches up '+esc(hurt.name)+' (+'+h+')');return;}
-    }
-    const roll=d(20)+c.hit+((D.boon&&D.boon.aim)||0)*2;
-    if(roll>=9){
-      const dmg=d(c.dmg);
-      f.hp-=dmg;p.hits++;
-      out.push('<strong>'+esc(p.name)+'</strong> rolls '+roll+' — hits for '+dmg);
-    }else{
-      out.push('<strong>'+esc(p.name)+'</strong> rolls '+roll+' — misses, and looks about to see if anyone noticed');
-    }
-  });
-  if(f.hp<=0){
-    D.log.push('Room '+D.room+': '+f.n+' saw sense.');
-    const t=TREASURE[d(TREASURE.length)-1];
-    const n=t.n+(f.boss?d(6):d(2));
-    D.loot[t.item]=(D.loot[t.item]||0)+n;
-    D.room++;D.foe=null;
-    D.party.forEach(p=>{if(p.hp<=0)p.hp=Math.ceil(p.max*0.4);else p.hp=Math.min(p.max,p.hp+d(4));});
-    save();
-    showRoom(f.boss?'It stops moving.':'That is that.','+'+n+' '+t.item);
-    return;
-  }
-  /* its side */
-  const standing=D.party.filter(alive);
-  const swings=f.boss?2:(standing.length>2?2:1);
-  for(let s=0;s<swings&&standing.length;s++){
-    const t=standing[d(standing.length)-1];
-    if(t.hp<=0)continue;
-    const roll=d(20);
-    if(roll>=8){
-      const dmg=d(f.dmg);
-      t.hp-=dmg;
-      out.push('<em>'+esc(f.n)+' rolls '+roll+' — catches '+esc(t.name)+' for '+dmg+'</em>');
-      if(t.hp<=0){
-        t.faints++;
-        const how=FAINTS[d(FAINTS.length)-1];
-        out.push('<em><strong>'+esc(t.name)+'</strong> '+how+'.</em>');
-        D.log.push(t.name+' '+how+'.');
-      }
-    }else out.push('<em>'+esc(f.n)+' rolls '+roll+' — swings wide</em>');
-  }
-  if(!D.party.some(alive)){save();endDelve(false,true);return;}
-  save();showFight(out.join('<br>'));
-}
-async function endDelve(finished,wiped){
-  const D=S.delve;
-  if(!D)return;
-  paused=true;
-  /* everyone wakes up on the grass, and the steel stays below */
-  const mine={},shares={};
-  Object.keys(D.loot).forEach(k=>{
-    const total=D.loot[k];
-    const each=Math.floor(total/D.party.length);
-    const rest=total-each*(D.party.length-1);
-    mine[k]=rest;
-    if(each>0)D.party.filter(p=>!p.you).forEach(p=>{
-      shares[p.id]=shares[p.id]||{};
-      shares[p.id][k]=(shares[p.id][k]||0)+each;
-    });
-  });
-  Object.keys(mine).forEach(k=>{if(mine[k]>0)bagAdd(k,mine[k]);});
-  const faints=D.party.reduce((a,p)=>a+p.faints,0);
-  const meName=(D.party.find(p=>p.you)||{}).name||'you';
-  const tale='You went down into '+(D.depthName||'the deep')+'. '
-    +(wiped?'It went badly.':(finished?'You came back up.':'You came back up early.'))
-    +' Between you the party '+(faints?('went over '+faints+' time'+(faints===1?'':'s')):'stayed upright the whole way')+'.';
-  /* tell the friends who came what happened to them */
-  S.reports=S.reports||[];
-  for(const p of D.party.filter(x=>!x.you)){
-    const got=shares[p.id]||{};
-    const line=meName+' took you down into '+(D.depthName||'the deep')+'. You went as the '+classById(p.cls).name.toLowerCase()
-      +', you '+(p.faints?('passed out '+p.faints+' time'+(p.faints===1?'':'s')):'stayed on your feet')
-      +', and '+(Object.keys(got).length?('your share is '+Object.entries(got).map(([k,v])=>v+' '+k).join(', ')):'there was nothing worth carrying');
-    S.reports.push({who:p.id,text:line,day:S.day});
-    if(NET.ready()){
-      const g=(NET.growers||[]).find(x=>x.look&&x.look.claimed===p.id&&x.id!==NET.me);
-      if(g){
-        await NET.note(g.id,line);
-        for(const [item,n] of Object.entries(got)){ if(n>0) await NET.gift(g.id,item,n,'from the stair'); }
-      }
-    }
-  }
-  const lootRows=Object.keys(mine).filter(k=>mine[k]>0)
-    .map(k=>'<div class="row"><div><strong>'+esc(k)+'</strong></div><span class="hint">+'+mine[k]+'</span></div>').join('')
-    ||'<div class="hint">Nothing but a story.</div>';
-  const story=D.log.slice(-6).map(l=>'<div class="hint">· '+esc(l)+'</div>').join('');
-  S.delve=null;S.standing+=Math.max(1,Object.keys(mine).length);
-  await save();
-  OR('<h3>'+(wiped?'You wake on the grass':'Up the stairs')+'</h3>'
-    +'<p class="sub">'+esc(tale)+' The steel is gone from your hands — it always is.</p>'
-    +'<h3 style="font-size:14px;margin:12px 0 6px;">What came up with you</h3>'+lootRows
-    +(story?('<h3 style="font-size:14px;margin:14px 0 6px;">How it went</h3>'+story):'')
-    +(D.party.length>1?('<div class="card" style="margin-top:10px;"><strong>The others</strong>'
-      +'<div class="hint">Their share has been sent on. They will hear about it when they are next about.</div></div>'):'')
-    +'<div class="acts"><button class="primary" id="closeB">Home</button></div>');
-  document.getElementById('closeB').onclick=close;
 }
 function showReports(){
   const r=(S.reports||[]).filter(x=>x.who===S.claimed);
@@ -3233,6 +3045,307 @@ function openHunt(){
   step();
 }
 
+
+/* ============================================================
+   BATTLE — turn based, dice decided, consequences funny.
+   ============================================================ */
+const FUMBLE=[
+ "{a} swings, misses, and hits the wall so hard the wall wins.",
+ "{a} steps on their own foot. It is a specific kind of humiliating.",
+ "{a}'s weapon slips and lands point-down in the dirt, quivering, judging.",
+ "{a} shouts something intimidating and immediately runs out of breath.",
+ "{a} trips over nothing whatsoever. There is nothing there. Everyone saw.",
+ "{a} goes for a mighty overhead blow and gets it stuck in a beam.",
+ "{a} misjudges the distance and swings at somewhere {t} used to be.",
+ "{a} sneezes mid-swing. The sneeze does more damage than the swing.",
+ "{a} attempts something clever. It is not clever.",
+ "{a} hits {t} with the flat of the blade, apologises, and hates themselves.",
+ "{a} loses their grip. The weapon travels further than the attack would have.",
+ "{a} closes their eyes at the crucial moment, as if that ever helped.",
+ "{a} steps in something. We will not be describing it.",
+ "{a} charges, thinks better of it halfway, and arrives at a confused amble.",
+ "{a}'s boot comes off. Just entirely comes off.",
+ "{a} winds up, commits fully, and connects with the air with tremendous force.",
+ "{a} gets tangled in their own cloak, which they will now claim they don't own.",
+ "{a} bites their tongue saying the word 'now'.",
+ "{a} slips on the wet stone and does an accidental pirouette.",
+ "{a} does everything right except the part where the weapon meets {t}.",
+];
+const CRIT=[
+ "{a} catches {t} clean and something goes quiet inside it.",
+ "{a} hits so well even {t} looks briefly impressed.",
+ "{a} lands one that will be talked about at the long table for weeks.",
+ "{a} finds the exact spot. Nobody is more surprised than {a}.",
+ "{a} strikes true, and for one second looks like somebody from a story.",
+];
+const MISS=[
+ "{a} swings wide. {t} does not appear to have noticed.",
+ "{a} comes close. Close is not a hit.",
+ "{t} shifts at the last moment and {a} finds only air.",
+ "{a} misjudges it by a hand's width.",
+];
+const FOE_FUMBLE=[
+ "{t} lunges, overshoots, and headbutts the floor.",
+ "{t} attacks with great confidence and no accuracy at all.",
+ "{t} gets distracted by its own shadow.",
+ "{t} charges and skids straight past everyone.",
+ "{t} makes a terrible noise and achieves nothing else.",
+];
+function dR(n){return 1+Math.floor(Math.random()*n);}
+function bLog(t){const B=S.battle;B.log.push(t);if(B.log.length>5)B.log.shift();}
+function classSkill(cls){
+  return ({fighter:{n:'Cleave',   cost:2,desc:'Hits everything in front of you.'},
+           ranger :{n:'Aimed shot',cost:2,desc:'Slow, and it rarely misses.'},
+           mage   :{n:'Hedge-bolt',cost:3,desc:'Loud. Occasionally alarming.'},
+           healer :{n:'Poultice', cost:2,desc:'Patches the worst of it.'}})[cls];
+}
+function startBattle(foes){
+  const D=S.dg;
+  S.battle={
+    foes:foes.map(f=>({ref:f,k:f.k,hp:f.hp,max:f.max,guard:0})),
+    party:D.party.map(p=>({id:p.id,name:p.name,cls:p.cls,hp:p.hp,max:p.max,
+      vigour:5,guard:0,down:p.hp<=0,ref:p})),
+    turn:0,order:[],phase:'menu',log:[],sel:0,tgt:0,anim:0,
+  };
+  const B=S.battle;
+  /* everyone rolls for who goes first */
+  B.order=B.party.map((p,i)=>({side:'us',i,roll:dR(20)+3}))
+    .concat(B.foes.map((f,i)=>({side:'them',i,roll:dR(20)})))
+    .sort((a,b)=>b.roll-a.roll);
+  bLog('Something comes at you out of the dark.');
+  paused=true;
+  renderBattle();
+}
+function battleActor(){
+  const B=S.battle;
+  for(let n=0;n<B.order.length;n++){
+    const o=B.order[(B.turn+n)%B.order.length];
+    if(o.side==='us'&&B.party[o.i]&&!B.party[o.i].down&&B.party[o.i].hp>0)return o;
+    if(o.side==='them'&&B.foes[o.i]&&B.foes[o.i].hp>0)return o;
+  }
+  return null;
+}
+function advanceTurn(){
+  const B=S.battle;
+  B.turn=(B.turn+1)%B.order.length;
+  if(!B.foes.some(f=>f.hp>0)){endBattle(true);return;}
+  if(!B.party.some(p=>p.hp>0&&!p.down)){endBattle(false);return;}
+  const a=battleActor();
+  if(!a){endBattle(true);return;}
+  if(a.side==='them'){setTimeout(()=>foeTurn(a.i),620);renderBattle();return;}
+  if(a.side==='us'&&!B.party[a.i].ref.you){setTimeout(()=>mateTurn(a.i),520);renderBattle();return;}
+  B.phase='menu';renderBattle();
+}
+function liveFoes(){return S.battle.foes.filter(f=>f.hp>0);}
+function doAttack(pi,ti,kind){
+  const B=S.battle;
+  const p=B.party[pi], f=B.foes[ti];
+  if(!p||!f||f.hp<=0)return;
+  const c=classById(p.cls);
+  const sk=classSkill(p.cls);
+  const roll=dR(20);
+  const bonus=(kind==='skill')?4:c.hit;
+  const name=p.name, tname=FOE_ART[f.k].n;
+  if(roll===1){
+    bLog(FUMBLE[dR(FUMBLE.length)-1].replaceAll('{a}',name).replaceAll('{t}',tname));
+    /* a fumble sometimes costs you */
+    if(dR(6)>=5){p.hp=Math.max(0,p.hp-2);bLog(name+' takes 2 from sheer embarrassment.');}
+  }else if(roll===20){
+    const dmg=dR(c.dmg)+c.dmg+4;
+    f.hp-=dmg;
+    bLog(CRIT[dR(CRIT.length)-1].replaceAll('{a}',name).replaceAll('{t}',tname)+'  ('+dmg+')');
+  }else if(roll+bonus>=11){
+    let dmg=dR(c.dmg)+2;
+    if(kind==='skill')dmg=Math.round(dmg*1.6);
+    if(f.guard>0)dmg=Math.round(dmg*0.5);
+    f.hp-=dmg;
+    bLog(name+' rolls '+roll+' — '+(kind==='skill'?sk.n:'hits')+' for '+dmg+'.');
+    if(kind==='skill'&&p.cls==='fighter'){
+      liveFoes().forEach(o=>{if(o!==f){const s=Math.ceil(dmg*0.4);o.hp-=s;}});
+      bLog('The swing carries through the rest of them.');
+    }
+  }else{
+    bLog(MISS[dR(MISS.length)-1].replaceAll('{a}',name).replaceAll('{t}',tname)+'  (rolled '+roll+')');
+  }
+  if(f.hp<=0){
+    bLog(FOE_ART[f.k].n+' has had enough.');
+    const t=depthLoot();S.dg.loot[t.item]=(S.dg.loot[t.item]||0)+1;
+  }
+  B.phase='resolve';renderBattle();
+  setTimeout(advanceTurn,780);
+}
+function doHeal(pi){
+  const B=S.battle;
+  const p=B.party[pi];
+  const roll=dR(20);
+  const hurt=B.party.filter(x=>x.hp>0&&x.hp<x.max).sort((a,b)=>a.hp-b.hp)[0]||p;
+  if(roll===1){
+    bLog(p.name+' mixes the poultice wrong. It smells illegal.');
+  }else{
+    const h=dR(8)+4+(roll===20?8:0);
+    hurt.hp=Math.min(hurt.max,hurt.hp+h);
+    if(hurt.hp>0)hurt.down=false;
+    bLog(p.name+(roll===20?' does something genuinely clever — ':' patches up ')+hurt.name+' (+'+h+').');
+  }
+  B.phase='resolve';renderBattle();
+  setTimeout(advanceTurn,700);
+}
+function doGuard(pi){
+  const B=S.battle;
+  B.party[pi].guard=2;
+  bLog(B.party[pi].name+' braces.');
+  B.phase='resolve';renderBattle();
+  setTimeout(advanceTurn,520);
+}
+function doFlee(){
+  const B=S.battle;
+  const roll=dR(20);
+  if(roll>=9){
+    bLog('You all leg it, with varying dignity.');
+    setTimeout(()=>endBattle(null),700);
+  }else{
+    bLog('You turn to run and immediately think better of it. (rolled '+roll+')');
+    B.phase='resolve';
+    setTimeout(advanceTurn,760);
+  }
+  renderBattle();
+}
+function mateTurn(i){
+  const B=S.battle;
+  const p=B.party[i];
+  if(!p||p.hp<=0){advanceTurn();return;}
+  const c=classById(p.cls);
+  if(c.heal&&B.party.some(x=>x.hp>0&&x.hp<x.max*0.55)){doHeal(i);return;}
+  const targets=liveFoes();
+  if(!targets.length){advanceTurn();return;}
+  const t=B.foes.indexOf(targets[dR(targets.length)-1]);
+  doAttack(i,t,dR(4)===1?'skill':'attack');
+}
+function foeTurn(i){
+  const B=S.battle;
+  const f=B.foes[i];
+  if(!f||f.hp<=0){advanceTurn();return;}
+  const A=FOE_ART[f.k];
+  const up=B.party.filter(p=>p.hp>0&&!p.down);
+  if(!up.length){endBattle(false);return;}
+  const t=up[dR(up.length)-1];
+  const roll=dR(20);
+  if(roll===1){
+    bLog(FOE_FUMBLE[dR(FOE_FUMBLE.length)-1].replaceAll('{t}',A.n));
+  }else if(roll>=8){
+    let dmg=dR(A.dmg)+2;
+    if(t.guard>0){dmg=Math.round(dmg*0.45);t.guard--;bLog(t.name+' takes it on the guard.');}
+    t.hp-=dmg;
+    bLog(A.n+' catches '+t.name+' for '+dmg+'.');
+    if(t.hp<=0){t.hp=0;t.down=true;t.ref.faints++;
+      bLog(t.name+' '+FAINTS[dR(FAINTS.length)-1]+'.');}
+  }else{
+    bLog(A.n+' swipes at '+t.name+' and misses.');
+  }
+  B.phase='resolve';renderBattle();
+  setTimeout(advanceTurn,760);
+}
+function endBattle(won){
+  const B=S.battle;
+  const D=S.dg;
+  /* carry health back out to the walking party */
+  B.party.forEach(p=>{p.ref.hp=p.hp;});
+  const r=roomAt(D.rx,D.ry);
+  if(won===true){
+    B.foes.forEach(bf=>{if(bf.hp<=0&&bf.ref)bf.ref.hp=0;else if(bf.ref)bf.ref.hp=bf.hp;});
+    toast('Fight won.');
+  }else if(won===false){
+    S.battle=null;
+    dgLeave(true);
+    return;
+  }else{
+    /* fled — push the foes back so you get a moment */
+    B.foes.forEach(bf=>{if(bf.ref){bf.ref.hp=bf.hp;
+      bf.ref.x+=(bf.ref.x-D.px)*0.6;bf.ref.y+=(bf.ref.y-D.py)*0.6;}});
+    D.inv=1.6;
+    toast('You got clear.');
+  }
+  S.battle=null;
+  paused=false;
+  close();
+  save();
+}
+/* ---------- the battle screen ---------- */
+function renderBattle(){
+  const B=S.battle;
+  if(!B)return;
+  const a=battleActor();
+  const mine=(a&&a.side==='us')?B.party[a.i]:null;
+  const isYou=mine&&mine.ref&&mine.ref.you&&B.phase==='menu';
+  const foeRows=B.foes.map((f,i)=>{
+    const A=FOE_ART[f.k];
+    const dead=f.hp<=0;
+    return '<div class="row" style="'+(dead?'opacity:.35;':'')+'">'
+      +'<div style="display:flex;gap:10px;align-items:center;">'
+      +'<canvas class="bfoe" data-k="'+f.k+'" width="44" height="44" style="width:42px;height:42px;image-rendering:pixelated;"></canvas>'
+      +'<div><strong>'+A.n+'</strong>'
+      +'<div class="bar" style="width:120px;"><i style="width:'+Math.max(0,Math.round(100*f.hp/f.max))+'%;background:var(--rose)"></i></div></div></div>'
+      +(isYou&&!dead?'<button data-hit="'+i+'">Strike</button>':'<span class="hint">'+Math.max(0,f.hp)+'</span>')
+      +'</div>';
+  }).join('');
+  const usRows=B.party.map(p=>{
+    const act=(a&&a.side==='us'&&B.party[a.i]===p);
+    return '<div class="row" style="'+(p.down?'opacity:.4;':'')+(act?'border-color:var(--amber);':'')+'">'
+      +'<div><strong>'+esc(p.name)+'</strong> <span class="hint">'+classById(p.cls).name+(p.down?' · out':'')+'</span>'
+      +'<div class="bar" style="width:150px;"><i style="width:'+Math.max(0,Math.round(100*p.hp/p.max))+'%;'
+      +'background:'+(p.hp/p.max<0.3?'var(--rose)':'var(--green)')+'"></i></div></div>'
+      +'<span class="hint">'+Math.max(0,Math.round(p.hp))+'/'+p.max+'</span></div>';
+  }).join('');
+  const sk=mine?classSkill(mine.cls):null;
+  const cmds=isYou
+    ? '<div class="acts">'
+      +'<button class="primary" id="bAtk">Attack</button>'
+      +'<button id="bSkill">'+(sk?sk.n:'Skill')+'</button>'
+      +'<button id="bGuard">Guard</button>'
+      +'<button id="bItem">Bag</button>'
+      +'<button id="bFlee">Run</button></div>'
+      +'<div class="hint">Pick a target with <strong>Strike</strong>, or Attack to take the nearest.</div>'
+    : '<div class="hint">'+(a?((a.side==='them')?'…':(B.party[a.i]?B.party[a.i].name+' is deciding…':'…')):'…')+'</div>';
+  OR('<h3>'+(liveFoes().length>1?liveFoes().length+' of them':FOE_ART[(liveFoes()[0]||B.foes[0]).k].n)+'</h3>'
+    +foeRows
+    +'<h3 style="font-size:14px;margin:14px 0 6px;">Your lot</h3>'+usRows
+    +'<div class="card" style="margin-top:10px;min-height:76px;">'
+    +B.log.map(l=>'<div class="hint">· '+esc(l)+'</div>').join('')+'</div>'
+    +cmds);
+  document.querySelectorAll('.bfoe').forEach(c2=>{
+    const g=c2.getContext('2d');g.imageSmoothingEnabled=false;
+    const A=FOE_ART[c2.dataset.k];
+    g.fillStyle=A.col;g.fillRect(8,10,28,28);
+    g.fillStyle=shadeC(A.col,1.25);g.fillRect(8,10,10,28);
+    g.fillStyle='#171310';g.fillRect(14,18,5,5);g.fillRect(25,18,5,5);
+    g.fillStyle='#171310';g.fillRect(13,30,18,3);
+  });
+  if(isYou){
+    const pi=a.i;
+    const near=()=>B.foes.findIndex(f=>f.hp>0);
+    document.querySelectorAll('[data-hit]').forEach(b=>b.onclick=()=>{
+      B.pendingTarget=parseInt(b.dataset.hit);
+      doAttack(pi,B.pendingTarget,B.pendingSkill?'skill':'attack');
+      B.pendingSkill=false;
+    });
+    document.getElementById('bAtk').onclick=()=>doAttack(pi,near(),'attack');
+    document.getElementById('bSkill').onclick=()=>{
+      if(mine.cls==='healer'){doHeal(pi);return;}
+      doAttack(pi,near(),'skill');
+    };
+    document.getElementById('bGuard').onclick=()=>doGuard(pi);
+    document.getElementById('bFlee').onclick=doFlee;
+    document.getElementById('bItem').onclick=()=>{
+      const eat=S.bag.filter(x=>x.n>0&&EATS[x.item]);
+      if(!eat.length){toast('Nothing in the bag worth eating.');return;}
+      const it=eat[0];
+      bagTake(it.item,1);
+      mine.hp=Math.min(mine.max,mine.hp+EATS[it.item]*2);
+      bLog(mine.name+' eats '+it.item.toLowerCase()+' mid-fight, which is either brave or rude.');
+      B.phase='resolve';renderBattle();setTimeout(advanceTurn,700);
+    };
+  }
+}
 /* ============================================================
    THE DEEP — walked, not read.
    Rooms on a grid, doors between them, things that come at you.
@@ -3322,14 +3435,16 @@ function enterDeep(cls,mates){
     party.push({id,name:firstName(f.name),cls:c.id,hp:c.hp,max:c.hp,you:false,faints:0,
       x:0,y:0,cool:0});
   });
-  S.dg={on:true,depth,rooms:dun.rooms,w:dun.w,h:dun.h,
+  const theme=DEPTHS[Math.floor(Math.random()*DEPTHS.length)];
+  S.dg={on:true,depth,theme:theme.id,seed:Math.floor(Math.random()*99999),
+        rooms:dun.rooms,w:dun.w,h:dun.h,
         rx:dun.start[0],ry:dun.start[1],
         px:(DW/2)*TILE,py:(DH-2)*TILE,face:0,step:0,
         party,loot:{},swing:0,hurt:0,inv:0,log:[]};
   fillRoom(roomAt(S.dg.rx,S.dg.ry),depth);
   S.scene='deep';
   paused=false;close();
-  toast('Down into the dark. WASD to move, E to swing.');
+  toast('Down into '+theme.name+'. '+theme.blurb);
   save();
 }
 /* ---------- the room you are standing in ---------- */
@@ -3415,10 +3530,10 @@ function dgMove(dt){
       return;}
     const dx=D.px-f.x,dy=D.py-f.y,d=Math.hypot(dx,dy)||1;
     f.x+=dx/d*A.sp*dt;f.y+=dy/d*A.sp*dt;
-    if(d<24&&D.inv<=0){
-      const me2=D.party.find(p=>p.you);
-      me2.hp-=A.dmg;D.inv=0.9;D.hurt=0.35;
-      if(me2.hp<=0){me2.hp=0;me2.faints++;dgDown();}
+    if(d<26&&D.inv<=0&&!S.battle){
+      /* everything close by joins in */
+      const group=r.foes.filter(o=>o.hp>0&&Math.hypot(o.x-f.x,o.y-f.y)<120).slice(0,4);
+      startBattle(group.length?group:[f]);
     }
   });
 }
@@ -3694,9 +3809,11 @@ function drawDeep(){
   ctx.restore();
   /* ---- HUD ---- */
   const hp=me2.hp,mx=me2.max;
-  ctx.fillStyle='rgba(10,9,8,0.8)';ctx.fillRect(10,10,190,54);
+  ctx.fillStyle='rgba(10,9,8,0.8)';ctx.fillRect(10,10,200,62);
   ctx.fillStyle='rgba(237,230,214,0.9)';ctx.font='11px Inter';ctx.textAlign='left';
-  ctx.fillText('LEVEL '+D.depth+' · '+classById(me2.cls).name,18,26);
+  ctx.fillText('LEVEL '+D.depth+' · '+(depthOf().name||'').replace(/^the /,''),18,26);
+  ctx.fillStyle='rgba(237,230,214,0.55)';ctx.font='10px Inter';
+  ctx.fillText(classById(me2.cls).name,18,64);
   ctx.fillStyle='rgba(255,255,255,0.16)';ctx.fillRect(18,32,170,10);
   ctx.fillStyle=hp/mx<0.3?'#C4493C':'#6FA85C';ctx.fillRect(18,32,170*Math.max(0,hp/mx),10);
   ctx.fillStyle='rgba(237,230,214,0.75)';ctx.font='10px Inter';
@@ -3731,40 +3848,55 @@ function drawDeep(){
 const IW=15, IH=9;
 const INSIDE={
   forge    :{name:"Sana & Andrew's",floor:'#4A4038',floorB:'#443A32',wall:'#3E3830',
-    stations:[{k:'furnace',x:3,y:2,label:'The furnace',act:'craft',at:'forge'},
-              {k:'anvil',  x:6,y:3,label:'The anvil',  act:'kit'},
-              {k:'bench',  x:10,y:2,label:"Andrew's bench",act:'craft',at:'forge'},
-              {k:'rack',   x:13,y:3,label:'Tool rack',  act:'kit'}]},
+    stations:[{k:'furnace',x:2,y:2,label:'The furnace',act:'craft',at:'forge'},
+              {k:'anvil',  x:5,y:3,label:'The anvil',  act:'kit',at:'forge'},
+              {k:'bench',  x:9,y:2,label:"The workbench",act:'craft',at:'forge'},
+              {k:'rack',   x:12,y:3,label:'Tool rack',  act:'kit',at:'forge'}],
+    props:[[7,1,'barrel'],[11,5,'crate'],[3,5,'crate'],[13,1,'coal'],[6,5,'anvil2'],[1,5,'bucket']]},
   seedhouse:{name:'The Seed Library',floor:'#4E4636',floorB:'#463F31',wall:'#414436',
     stations:[{k:'loom',  x:3,y:2,label:'The loom',    act:'craft',at:'seedhouse'},
               {k:'mill',  x:7,y:2,label:'The millstone',act:'craft',at:'seedhouse'},
-              {k:'seeds', x:11,y:2,label:'Seed drawers',act:'seeds'},
-              {k:'sacks', x:13,y:5,label:'Sacks',       act:'craft',at:'seedhouse'}]},
+              {k:'seeds', x:11,y:2,label:'Seed drawers',act:'seeds'}],
+    props:[[5,5,'sackpile'],[9,5,'sackpile'],[13,4,'crate'],[1,4,'barrel'],[13,1,'hangherb'],[6,1,'hangherb']]},
   kitchen  :{name:'The Long Kitchen',floor:'#54463A',floorB:'#4C3F34',wall:'#4A3A2E',
-    stations:[{k:'oven', x:3,y:2,label:'The ovens',   act:'craft',at:'kitchen'},
-              {k:'oven', x:5,y:2,label:'The ovens',   act:'craft',at:'kitchen'},
-              {k:'table',x:8,y:4,label:'The long table',act:'craft',at:'kitchen'},
-              {k:'churn',x:12,y:2,label:'The churn',  act:'craft',at:'kitchen'}]},
+    stations:[{k:'oven', x:2,y:2,label:'The ovens',   act:'craft',at:'kitchen'},
+              {k:'oven', x:4,y:2,label:'The ovens',   act:'craft',at:'kitchen'},
+              {k:'churn',x:11,y:2,label:'The churn',  act:'craft',at:'kitchen'}],
+    props:[[7,4,'longtable'],[13,2,'shelfjars'],[6,1,'hangpots'],[9,1,'hangherb'],[1,5,'sackpile'],[13,5,'crate']]},
   hall     :{name:'The Commons Hall',floor:'#46443C',floorB:'#3F3D36',wall:'#3A4048',
     stations:[{k:'board',x:7,y:1,label:'The needs board',act:'board'},
-              {k:'herbs',x:3,y:2,label:'The drying rack',act:'craft',at:'hall'},
-              {k:'bench',x:11,y:4,label:'The long bench',act:'craft',at:'hall'}]},
+              {k:'herbs',x:3,y:2,label:'The drying rack',act:'craft',at:'hall'}],
+    props:[[10,3,'longtable'],[10,5,'longtable'],[5,5,'bench2'],[13,2,'shelfjars'],[1,4,'barrel'],[12,1,'hangherb']]},
   supply   :{name:'The Supply House',floor:'#4A4448',floorB:'#443E42',wall:'#443C4A',
     stations:[{k:'shelf',x:3,y:2,label:'The shelves',act:'supply'},
-              {k:'plans',x:8,y:2,label:'The plans',  act:'supply'},
-              {k:'shelf',x:12,y:2,label:'The shelves',act:'supply'}]},
+              {k:'plans',x:8,y:2,label:'The plans',  act:'supply'}],
+    props:[[12,2,'shelfjars'],[5,5,'crate'],[10,5,'sackpile'],[1,4,'barrel'],[13,5,'crate'],[6,1,'hangpots']]},
   home     :{name:'Your cottage',floor:'#584838',floorB:'#503F31',wall:'#4E3E30',
     stations:[{k:'bed',  x:11,y:2,label:'Your bed',   act:'sleep'},
               {k:'table',x:5,y:4,label:'The table',   act:'bag'},
-              {k:'hearth',x:3,y:1,label:'The hearth', act:'eat'}]},
+              {k:'hearth',x:2,y:1,label:'The hearth', act:'eat'}],
+    props:[[8,2,'chair'],[4,2,'dresser'],[13,5,'crate'],[1,5,'bucket'],[9,5,'rug'],[7,1,'hangpots']]},
   barnold  :{name:'The old barn',floor:'#4C4436',floorB:'#453E31',wall:'#413A2E',
     stations:[{k:'sacks',x:4,y:2,label:'Stores',act:'bag'},
-              {k:'rack', x:10,y:2,label:'Tool rack',act:'kit'}]},
+              {k:'rack', x:10,y:2,label:'Tool rack',act:'kit',at:'forge'}],
+    props:[[7,4,'haybale'],[12,4,'haybale'],[2,5,'crate'],[13,1,'hangherb'],[6,1,'barrel']]},
 };
 function insideSpec(id){
   if(INSIDE[id])return INSIDE[id];
-  if(id&&id.startsWith('c'))return {name:'A cottage',floor:'#54463A',floorB:'#4C3F34',wall:'#463A30',
-    stations:[{k:'bed',x:11,y:2,label:'A bed',act:null},{k:'table',x:5,y:4,label:'A table',act:null}]};
+  if(id&&id.startsWith('c')){
+    const fam=(typeof cottageFamily==='function')?cottageFamily(id):'';
+    const kids=FOLK.filter(f=>homeOf(f)===id&&f.child).length;
+    const beds=[{k:'bed',x:11,y:2,label:'A bed',act:null}];
+    if(kids>0)beds.push({k:'bed',x:2,y:2,label:"The children's bed",act:null});
+    if(kids>2)beds.push({k:'bed',x:6,y:1,label:'Another bed',act:null});
+    const props=[[8,4,'chair'],[13,5,'crate'],[1,5,'bucket'],[9,1,'hangpots'],[5,5,'rug']];
+    if(kids>0)props.push([4,4,'dresser']);
+    return {name:fam?(fam+"'s cottage"):'A cottage',
+      floor:'#54463A',floorB:'#4C3F34',wall:'#463A30',
+      stations:beds.concat([{k:'table',x:5,y:4,label:'A table',act:null},
+                            {k:'hearth',x:2,y:5,label:'The hearth',act:null}]),
+      props};
+  }
   return null;
 }
 function enterInside(id){
@@ -3846,12 +3978,18 @@ function drawInside(){
       ctx.fillStyle='rgba(0,0,0,0.30)';ctx.fillRect(jx+7,by+4,2,2);
     }
   }
+  const layerProps=[];
   /* the way out */
   const dx=Math.floor(IW/2)*TILE;
   ctx.fillStyle='#171310';ctx.fillRect(dx-4,RH-8,TILE+8,8);
   ctx.fillStyle='#3E2C1C';ctx.fillRect(dx,RH-6,TILE,6);
   ctx.fillStyle='rgba(237,230,214,0.5)';ctx.font='9px Inter';ctx.textAlign='center';
   ctx.fillText('out',dx+16,RH-10);
+  /* scenery */
+  (sp.props||[]).forEach(p=>{
+    const [x,y,t]=p;
+    layerProps.push({y:(y+1)*TILE,f:()=>drawProp(t,x,y)});
+  });
   /* equipment */
   const near=nearStation();
   const layer=[];
@@ -3879,7 +4017,7 @@ function drawInside(){
     const pal=me?me.pal:{skin:S.player.skin,hair:S.player.hair,shirt:S.player.top,pants:'#3A3A42'};
     drawPerson(ctx,S.ipx,S.ipy,pal,pstep,pface);
   }});
-  layer.sort((a,b)=>a.y-b.y).forEach(i=>i.f());
+  layerProps.concat(layer).sort((a,b)=>a.y-b.y).forEach(i=>i.f());
   /* warm light from the working end */
   const gl=ctx.createRadialGradient(RW*0.3,TILE*2,20,RW*0.3,TILE*2,RW*0.8);
   gl.addColorStop(0,'rgba(255,210,140,0.10)');gl.addColorStop(1,'rgba(255,210,140,0)');
@@ -3895,14 +4033,122 @@ function drawInside(){
 function useStation(){
   const st=nearStation();
   if(!st||!st.act){toast('Nothing to do there.');return;}
-  if(st.act==='craft')openCraft(st.at);
-  else if(st.act==='kit')openCraft('forge');
+  if(st.act==='craft')openCraft(st.at,st.k);
+  else if(st.act==='kit')openCraft('forge',st.k);
   else if(st.act==='supply')openSupply();
   else if(st.act==='board')openBoard();
   else if(st.act==='seeds')openSupply();
   else if(st.act==='bag')openBag();
   else if(st.act==='eat')openEat();
   else if(st.act==='sleep')openSleep();
+}
+
+function drawProp(t,x,y){
+  const px=x*TILE, py=y*TILE;
+  const sh=(w,h)=>{ctx.fillStyle='rgba(0,0,0,0.30)';ctx.fillRect(px+3,py+h-3,w,5);};
+  if(t==='barrel'){
+    sh(26,30);
+    ctx.fillStyle='#5A4028';ctx.fillRect(px+4,py+2,24,28);
+    ctx.fillStyle='#6E5030';ctx.fillRect(px+6,py+2,8,28);
+    ctx.fillStyle='#3E2C1C';ctx.fillRect(px+4,py+7,24,3);ctx.fillRect(px+4,py+21,24,3);
+    ctx.fillStyle='#8C6A3C';ctx.fillRect(px+4,py+1,24,4);
+    ctx.fillStyle='#171310';ctx.fillRect(px+3,py+1,1,29);ctx.fillRect(px+28,py+1,1,29);
+  }else if(t==='crate'){
+    sh(26,28);
+    ctx.fillStyle='#7A5C38';ctx.fillRect(px+4,py+6,24,24);
+    ctx.fillStyle='#8C6A42';ctx.fillRect(px+4,py+6,24,4);
+    ctx.fillStyle='#5A4028';ctx.fillRect(px+4,py+16,24,3);
+    ctx.fillStyle='#5A4028';ctx.fillRect(px+14,py+6,3,24);
+    ctx.fillStyle='#171310';ctx.fillRect(px+3,py+5,26,1);ctx.fillRect(px+3,py+5,1,25);
+  }else if(t==='sackpile'){
+    sh(28,30);
+    [[2,12,14,16],[15,8,14,20],[8,20,16,10]].forEach(([a,b,w,h],i)=>{
+      ctx.fillStyle=i%2?'#A8844A':'#96754180'.slice(0,7);
+      ctx.fillStyle=i%2?'#A8844A':'#967541';
+      ctx.fillRect(px+a,py+b,w,h);
+      ctx.fillStyle='rgba(255,255,255,0.10)';ctx.fillRect(px+a,py+b,w,3);
+      ctx.fillStyle='#7A5C32';ctx.fillRect(px+a+w/2-3,py+b-2,6,3);
+    });
+  }else if(t==='haybale'){
+    sh(30,26);
+    ctx.fillStyle='#C9A44E';ctx.fillRect(px+1,py+8,30,22);
+    for(let i=0;i<6;i++){ctx.fillStyle=i%2?'#D8B45E':'#B8943E';ctx.fillRect(px+1,py+9+i*4,30,2);}
+    ctx.fillStyle='#7A5C32';ctx.fillRect(px+7,py+8,3,22);ctx.fillRect(px+22,py+8,3,22);
+  }else if(t==='hangherb'){
+    for(let i=0;i<4;i++){
+      const hx=px+4+i*7;
+      ctx.fillStyle='#5A4632';ctx.fillRect(hx,py-2,1,6);
+      ctx.fillStyle=['#6E8C4A','#8FA85C','#4E7A46','#A8BC72'][i%4];
+      ctx.fillRect(hx-2,py+4,5,12);
+      ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(hx-2,py+13,5,3);
+    }
+  }else if(t==='hangpots'){
+    ctx.fillStyle='#3A3630';ctx.fillRect(px,py,TILE,3);
+    [[4,'#7E7A72'],[13,'#8C5A42'],[22,'#6E6A62']].forEach(([o,c],i)=>{
+      ctx.fillStyle='#4A4640';ctx.fillRect(px+o+3,py+3,2,4);
+      ctx.fillStyle=c;ctx.fillRect(px+o,py+7,9,8);
+      ctx.fillStyle='rgba(255,255,255,0.18)';ctx.fillRect(px+o+1,py+8,2,5);
+    });
+  }else if(t==='shelfjars'){
+    sh(28,30);
+    ctx.fillStyle='#5A4632';ctx.fillRect(px+2,py-4,28,34);
+    ctx.fillStyle='#43301E';ctx.fillRect(px+4,py-2,24,30);
+    for(let r=0;r<3;r++){
+      ctx.fillStyle='rgba(0,0,0,0.32)';ctx.fillRect(px+4,py+7+r*9,24,2);
+      for(let i=0;i<4;i++){
+        ctx.fillStyle=['#7FA8A8','#C4744A','#8C7AA8','#C9A44E','#6E8C4A'][(i+r)%5];
+        ctx.fillRect(px+5+i*6,py+1+r*9,5,6);
+        ctx.fillStyle='rgba(255,255,255,0.22)';ctx.fillRect(px+5+i*6,py+1+r*9,1,6);
+      }
+    }
+  }else if(t==='longtable'){
+    ctx.fillStyle='rgba(0,0,0,0.28)';ctx.fillRect(px+2,py+22,TILE*3-4,5);
+    ctx.fillStyle='#6E5638';ctx.fillRect(px-2,py+4,TILE*3+4,16);
+    ctx.fillStyle='#8C6A42';ctx.fillRect(px-2,py+4,TILE*3+4,4);
+    ctx.fillStyle='rgba(0,0,0,0.16)';ctx.fillRect(px-2,py+18,TILE*3+4,2);
+    ctx.fillStyle='#5A4632';ctx.fillRect(px+2,py+20,5,10);ctx.fillRect(px+TILE*3-9,py+20,5,10);
+  }else if(t==='bench2'){
+    ctx.fillStyle='rgba(0,0,0,0.24)';ctx.fillRect(px+2,py+18,TILE*2-4,4);
+    ctx.fillStyle='#5C4630';ctx.fillRect(px,py+8,TILE*2,8);
+    ctx.fillStyle='#6E5638';ctx.fillRect(px,py+8,TILE*2,3);
+    ctx.fillStyle='#43301E';ctx.fillRect(px+3,py+16,4,7);ctx.fillRect(px+TILE*2-7,py+16,4,7);
+  }else if(t==='chair'){
+    ctx.fillStyle='rgba(0,0,0,0.24)';ctx.fillRect(px+8,py+22,16,4);
+    ctx.fillStyle='#523B26';ctx.fillRect(px+8,py+2,16,9);
+    ctx.fillStyle='#3E2C1C';ctx.fillRect(px+11,py+3,2,7);ctx.fillRect(px+15,py+3,2,7);ctx.fillRect(px+19,py+3,2,7);
+    ctx.fillStyle='#5C4630';ctx.fillRect(px+7,py+12,18,7);
+    ctx.fillStyle='#43301E';ctx.fillRect(px+9,py+19,3,5);ctx.fillRect(px+20,py+19,3,5);
+  }else if(t==='dresser'){
+    sh(26,30);
+    ctx.fillStyle='#5A4028';ctx.fillRect(px+3,py-2,26,32);
+    ctx.fillStyle='#6E5030';ctx.fillRect(px+5,py,22,28);
+    for(let r=0;r<3;r++){
+      ctx.fillStyle='#4A3420';ctx.fillRect(px+6,py+1+r*9,20,8);
+      ctx.fillStyle='#C9A44E';ctx.fillRect(px+14,py+4+r*9,5,2);
+    }
+  }else if(t==='rug'){
+    ctx.fillStyle='#6B3A4A';ctx.fillRect(px-8,py+4,TILE*2,TILE-6);
+    ctx.fillStyle='#8C4A5E';ctx.fillRect(px-4,py+8,TILE*2-8,TILE-14);
+    ctx.fillStyle='#C9A44E';ctx.fillRect(px+2,py+12,TILE*2-20,TILE-22);
+    ctx.fillStyle='rgba(237,230,214,0.25)';
+    for(let i=0;i<TILE*2;i+=6)ctx.fillRect(px-8+i,py+1,3,3);
+  }else if(t==='bucket'){
+    sh(18,22);
+    ctx.fillStyle='#5E7E86';ctx.fillRect(px+7,py+10,18,18);
+    ctx.fillStyle='#7FA0A8';ctx.fillRect(px+7,py+10,18,3);
+    ctx.fillStyle='#4A6068';ctx.fillRect(px+9,py+14,14,10);
+    ctx.fillStyle='#5E7E86';ctx.fillRect(px+6,py+4,20,2);
+  }else if(t==='coal'){
+    sh(24,26);
+    ctx.fillStyle='#2A2620';
+    [[4,14],[12,10],[18,16],[8,20],[20,22]].forEach(([a,b])=>ctx.fillRect(px+a,py+b,8,7));
+    ctx.fillStyle='#3E3830';ctx.fillRect(px+12,py+11,4,3);
+  }else if(t==='anvil2'){
+    ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillRect(px+6,py+26,20,4);
+    ctx.fillStyle='#3A2C1E';ctx.fillRect(px+8,py+16,16,12);
+    ctx.fillStyle='#4A4A52';ctx.fillRect(px+4,py+8,24,8);
+    ctx.fillStyle='#6A6A74';ctx.fillRect(px+4,py+8,24,2);
+  }
 }
 function drawStation(st,hot){
   const x=st.x*TILE, y=st.y*TILE;
@@ -4642,7 +4888,6 @@ function loop(ts){
   resize();updateHud();drawToolbar();
   if(!S.started)openIntro();
   else if(S.dg&&S.dg.on){S.scene='deep';paused=false;}
-  else if(S.delve&&!S.delve.over){paused=false;setTimeout(()=>{S.delve.foe?showFight():showRoom('Where you left off','The stair goes on.');},400);}
   else {paused=false;setTimeout(showReports,900);}
   requestAnimationFrame(loop);
 })();
