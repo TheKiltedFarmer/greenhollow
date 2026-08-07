@@ -366,9 +366,9 @@ function newGame(){
   const folk={};FOLK.forEach(f=>{folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
   return {day:1,min:DAY_START,stam:STAMINA,runId:Date.now(),
     player:{name:'',skin:'#E8C49B',hair:'#6B4226',hairStyle:'short',top:'#4E8B8B'},
-    jobs:{jess:'seedkeep',justin:'baker',sana:'smith',kayla:'preserve',patrick:'woodsman',
-          andrew:'maker',zak:'herbalist',jason:'warden',rachel:'healer',heather:'ground',
-          conrad:'cook',amanda:'teacher',jake:'builder'},
+    jobs:{jess:'miller',justin:'baker',sana:'smith',kayla:'weaver',patrick:'woodsman',
+          andrew:'carpenter',zak:'teacher',jason:'warden',rachel:'healer',heather:'ground',
+          conrad:'cook',amanda:'seedkeep',jake:'maker'},
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
     delve:null, reports:[], stock:{}, inside:null, ipx:0, ipy:0, fish:null, hunt:null, fish:null, hunt:null,
@@ -392,6 +392,7 @@ async function load(){
       if(S.scene==='fishing'||S.scene==='hunting')S.scene='world';S.stock=S.stock||{};S.reports=S.reports||[];
       S.jobs=S.jobs||newGame().jobs;S.claimed=S.claimed||null;S.people=S.people||{};
       rebuildFolk();
+      fillVacancies();
       FOLK.forEach(f=>{if(!S.folk[f.id])S.folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
       /* if a save predates a map change, put the player back on solid ground */
       const tx=Math.floor(S.px/TILE),ty=Math.floor(S.py/TILE);
@@ -1243,6 +1244,24 @@ function selectedSeed(){
 
 /* ================= COLLISION ================= */
 const blocked=new Set();
+/* recompute one tile — used the moment the world changes under you */
+function refreshTile(x,y){
+  const k=key(x,y);
+  const permanent =
+    (x>=RIVER_X) ||
+    Object.values(BLD).some(b=>x>=b.x&&x<b.x+b.w&&y>=b.y&&y<b.y+b.h) ||
+    (S.built||[]).some(b=>x>=b.x&&x<b.x+b.w&&y>=b.y&&y<b.y+b.h) ||
+    (x===DOOR.x&&y===DOOR.y) ||
+    (x===WELL.x&&y===WELL.y) || (x===TABLE.x&&y===TABLE.y) ||
+    x<2 || y<1 || x>=MW-1 || y>=MH-1;
+  const nd=S.nodes&&S.nodes[k];
+  const nodeBlocks = !!(nd && nd.cut<=S.day && nd.k!=='reed' && nd.k!=='clay');
+  /* the hide and the jetty are always walkable */
+  const freed =
+    (Math.abs(x-HIDE.x)<=2&&Math.abs(y-HIDE.y)<=1) ||
+    (Math.abs(x-JETTY.x)<=2&&Math.abs(y-JETTY.y)<=1);
+  if((permanent||nodeBlocks)&&!freed)blocked.add(k); else blocked.delete(k);
+}
 function buildCollision(){
   blocked.clear();
   const blk=(x,y)=>blocked.add(key(x,y));
@@ -1983,6 +2002,21 @@ function folkDoing(f){
 }
 function folkPos(f){
   const h=S.min/60;
+  /* children keep to the hall, the lane and their own doorstep */
+  if(f.child&&h>=7&&h<18){
+    const hb=BLD[homeOf(f)];
+    const kids=FOLK.filter(x=>x.child);
+    const i=kids.findIndex(x=>x.id===f.id);
+    if(h>=9&&h<15){
+      const hall=BLD.hall;
+      const r=[[0,2],[2,2],[-2,2],[1,3],[-1,3],[3,3],[-3,3],[0,4],[2,4],[-2,4]][i%10];
+      return {x:hall.door.x+r[0],y:hall.door.y+r[1]};
+    }
+    if(hb){
+      const r=[[0,2],[2,3],[-2,3],[3,2],[-3,2],[1,4],[-1,4],[4,3],[-4,3],[0,5]][i%10];
+      return {x:hb.door.x+r[0],y:hb.door.y+r[1]};
+    }
+  }
   if(h<7||h>=21.5){
     const hb=BLD[homeOf(f)];
     if(hb){
@@ -2193,6 +2227,25 @@ function careerHolder(cid){
   return f||null;
 }
 function careerOf(fid){return (S.jobs&&S.jobs[fid])||null;}
+/* the trades that actually operate something */
+const MANNED=['smith','carpenter','weaver','miller','baker','cook','healer'];
+function fillVacancies(){
+  if(!S.jobs)return;
+  const adults=FOLK.filter(f=>!f.child&&!f.household&&f.id!==S.claimed);
+  MANNED.forEach(cid=>{
+    if(careerHolder(cid))return;
+    /* somebody on a trade nobody would miss picks it up */
+    const spare=adults.find(f=>{
+      const c=careerOf(f.id);
+      return c&&MANNED.indexOf(c)<0;
+    });
+    if(spare){
+      const c=careerById(cid);
+      S.jobs[spare.id]=cid;
+      if(c)spare.at=c.at;
+    }
+  });
+}
 function freeCareers(){
   const taken=new Set(Object.values(S.jobs||{}));
   return CAREERS.filter(c=>!taken.has(c.id));
@@ -2309,6 +2362,7 @@ function takeCareer(fid,cid){
   const f=FOLK.find(x=>x.id===fid);
   const c=careerById(cid);
   if(f&&c)f.at=c.at;
+  fillVacancies();
   save();
   return prev&&prev.id!==fid?prev:null;
 }
@@ -2641,6 +2695,7 @@ function interact(){
     const got=K.n+(hashStr('g'+t.x+t.y+S.day)%2)+toolBonus(K.tool);
     bagAdd(K.item,got);
     nd.cut=S.day+K.regrow;
+    refreshTile(t.x,t.y);              /* the stump is gone — so is the wall */
     toast('+'+got+' '+K.item);
     save();return;
   }
@@ -3706,6 +3761,7 @@ function drawHunt(){
    INSIDE — you walk in, and the equipment is really there.
    ============================================================ */
 const IW=15, IH=9;
+const IS={};   /* where people are standing inside, kept out of the save */
 const INSIDE={
   forge    :{name:"Sana & Andrew's",floor:'#4A4038',floorB:'#443A32',wall:'#3E3830',
     stations:[{k:'furnace',x:2,y:2,label:'The furnace',act:'craft',at:'forge'},
@@ -3858,20 +3914,47 @@ function drawInside(){
   sp.stations.forEach(st=>{
     layer.push({y:(st.y+1)*TILE,f:()=>drawStation(st,near&&near===st)});
   });
-  /* folk who work here */
+  /* folk who work here — at their own machine, and moving */
+  const h=S.min/60;
   FOLK.forEach(f=>{
     if(isMe(f))return;
     const c=careerById(careerOf(f.id));
-    const at=(c&&c.at)||f.at;
-    if(at!==id)return;
-    const h=S.min/60;
+    const at=(c&&c.at)||null;
+    if(at!==id)return;                       /* only people whose trade is here */
     if(h<8||h>=18)return;
-    const st=folkState(f);
-    const fx=((hashStr(f.id)%(IW-4))+2)*TILE, fy=(2+(hashStr(f.id+'y')%(IH-4)))*TILE;
-    layer.push({y:fy+24,f:()=>{
-      drawPerson(ctx,fx,fy,f.pal,0,1);
-      ctx.fillStyle='rgba(237,230,214,0.85)';ctx.font='10px Inter';ctx.textAlign='center';
-      ctx.fillText(firstName(f.name),fx+16,fy-8);
+    if(!IS[f.id])IS[f.id]={x:0,y:0,tx:0,ty:0,step:0,face:1,idle:Math.random()*3,set:false};
+    const w=IS[f.id];
+    /* their station, if their trade has one */
+    const mine=sp.stations.find(s=>REFINE.some(r=>r.st===s.k&&r.career===careerOf(f.id)));
+    const home=mine?{x:(mine.x+0.5)*TILE,y:(mine.y+1.4)*TILE}
+                   :{x:((hashStr(f.id)%(IW-5))+2.5)*TILE,y:(3+(hashStr(f.id+'y')%(IH-5)))*TILE};
+    if(!w.set){w.x=home.x;w.y=home.y;w.tx=home.x;w.ty=home.y;w.set=true;}
+    w.idle-=1/60;
+    if(w.idle<=0){
+      w.idle=1.6+Math.random()*3.2;
+      w.tx=Math.max(TILE*1.5,Math.min((IW-2)*TILE,home.x+(Math.random()-0.5)*TILE*2.6));
+      w.ty=Math.max(TILE*1.6,Math.min((IH-1.6)*TILE,home.y+(Math.random()-0.5)*TILE*1.8));
+    }
+    const dx=w.tx-w.x,dy=w.ty-w.y,d=Math.hypot(dx,dy);
+    if(d>2){const sp2=34/60;w.x+=dx/d*Math.min(sp2,d);w.y+=dy/d*Math.min(sp2,d);
+      w.step+=0.12;w.face=Math.abs(dx)>Math.abs(dy)?(dx>0?2:3):(dy>0?1:0);}
+    else w.step=0;
+    const busy=mine?('at '+mine.label.toLowerCase().replace(/^the /,'')):
+      (c?c.verb:'about their work');
+    layer.push({y:w.y+24,f:()=>{
+      drawPerson(ctx,w.x-16,w.y-24,f.pal,w.step,w.face);
+      ctx.font='10px Inter';ctx.textAlign='center';
+      ctx.fillStyle='rgba(237,230,214,0.9)';
+      ctx.fillText(firstName(f.name),w.x,w.y-32);
+      if(Math.hypot(w.x-(S.ipx+16),w.y-(S.ipy+20))<3.2*TILE){
+        ctx.font='9px Inter';
+        const cap='· '+busy+' ·';
+        const tw=ctx.measureText(cap).width;
+        ctx.fillStyle='rgba(16,20,16,0.82)';
+        ctx.fillRect(w.x-tw/2-4,w.y-48,tw+8,13);
+        ctx.fillStyle='rgba(237,230,214,0.75)';
+        ctx.fillText(cap,w.x,w.y-38);
+      }
     }});
   });
   layer.push({y:S.ipy+24,f:()=>{
@@ -4148,6 +4231,7 @@ function placeHere(x,y){
   if(!has(plan.cost)){toast('Not enough materials any more.');S.placing=null;return;}
   payFor(plan.cost);
   S.built.push({id:plan.id,x,y,w:plan.w,h:plan.h,day:S.day});
+  for(let by=y;by<y+plan.h;by++)for(let bx=x;bx<x+plan.w;bx++)refreshTile(bx,by);
   SFX.build();
   S.placing=null;
   S.standing+=3;
@@ -4613,6 +4697,7 @@ async function doSleep(){
     p.wet=false;
   });
   S.day++;S.min=DAY_START;S.stam=STAMINA;
+  buildCollision();                    /* what regrew overnight is solid again */
   checkGifts();
   const stock=morningStock();
   const got=morningYield().concat(stock);
