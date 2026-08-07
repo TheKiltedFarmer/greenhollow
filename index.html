@@ -371,7 +371,8 @@ function newGame(){
           conrad:'cook',amanda:'seedkeep',jake:'maker'},
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
-    delve:null, reports:[], stock:{}, inside:null, ipx:0, ipy:0, fish:null, hunt:null, fish:null, hunt:null,
+    delve:null, reports:[], stock:{}, inside:null, room:'main', ipx:0, ipy:0,
+    fish:null, hunt:null, myStuff:{}, carrying:null, fish:null, hunt:null,
     farm:{},bag:[{item:'Turnip seeds',n:6},{item:'Carrot seeds',n:4},{item:'Wood',n:8},{item:'Stone',n:4},{item:'Fibre',n:4}],
     nodes:null,built:[],placing:null,
     tool:0,cans:0,kit:{hoe:0,axe:0,pick:0,can:0},folk,standing:0,needs:[],needsDay:0,shared:[],
@@ -386,6 +387,7 @@ async function load(){
       S.built=S.built||[];if(!S.nodes)S.nodes=buildNodes();
       S.kit=S.kit||{hoe:0,axe:0,pick:0,can:0};
       if(S.inside===undefined)S.inside=null;
+      S.myStuff=S.myStuff||{};S.room=S.room||'main';S.carrying=S.carrying||null;
       S.fish=null;S.hunt=null;
       if(S.scene==='fishing'||S.scene==='hunting')S.scene='world';
       S.fish=null;S.hunt=null;
@@ -1910,6 +1912,7 @@ function draw(){
   FOLK.forEach(f=>{
     if(isMe(f))return;                 /* that one is you — drawn as the player */
     if(indoors(f))return;              /* they are in bed, and the window is lit */
+    if(isIndoorsNow(f))return;         /* at work inside — you will find them there, not here */
     const st=folkState(f);
     layer.push({y:st.y+24,f:()=>{
       const fx=st.x,fy=st.y;
@@ -2063,6 +2066,14 @@ window.addEventListener('keydown',e=>{
     const k=e.key.toLowerCase();
     if(k==='e'||k===' '||k==='enter'){e.preventDefault();useStation();return;}
     if(k==='q'){e.preventDefault();leaveInside();return;}
+    if(k==='f'){e.preventDefault();
+      if(!canDecorate()){toast('Not your place to rearrange.');return;}
+      if(S.carrying){
+        const m=MAKEABLE.find(x=>x.t===S.carrying);
+        if(m)Object.keys(m.cost).forEach(kk=>bagAdd(kk,m.cost[kk]));
+        S.carrying=null;save();toast('Put the materials back.');return;
+      }
+      openFurnish();return;}
   }
   if(!paused&&S.scene==='deep'&&dgOn()){
     const k=e.key.toLowerCase();
@@ -2229,6 +2240,20 @@ function careerHolder(cid){
 function careerOf(fid){return (S.jobs&&S.jobs[fid])||null;}
 /* the trades that actually operate something */
 const MANNED=['smith','carpenter','weaver','miller','baker','cook','healer'];
+/* trades worked in the open air — everyone else is indoors during the day */
+const OUTDOOR=['woodsman','ground','shepherd','orchard','beekeep','fisher','ranger','carter','warden'];
+function worksIndoors(f){
+  const c=careerById(careerOf(f.id));
+  if(!c)return null;
+  if(OUTDOOR.indexOf(c.id)>=0)return null;
+  return insideSpec(c.at)?c.at:null;
+}
+function isIndoorsNow(f){
+  const h=S.min/60;
+  if(h<8||h>=18)return null;
+  if(f.child)return null;
+  return worksIndoors(f);
+}
 function fillVacancies(){
   if(!S.jobs)return;
   const adults=FOLK.filter(f=>!f.child&&!f.household&&f.id!==S.claimed);
@@ -3757,6 +3782,168 @@ function drawHunt(){
   ctx.textAlign='right';ctx.fillStyle='rgba(237,230,214,0.6)';
   ctx.fillText('A/D or joystick to swing  ·  E to fire  ·  Q to go home',W-14,Hh-18);
 }
+
+
+/* ============================================================
+   BUILDING OUT — rooms grow, and there is an upstairs.
+   ============================================================ */
+const HOME_WORK=[
+  {id:'widen', name:'Knock the wall out', cost:{Plank:12,Stone:8},
+   note:'Four more feet of room. You will feel it.'},
+  {id:'stairs', name:'Put a stair in',    cost:{Plank:20,Iron:3},
+   note:'Up into the roof space. Somewhere of your own.'},
+  {id:'loft',  name:'Board the loft',     cost:{Plank:14,Cloth:4},
+   note:'Makes the upstairs worth being in.',need:'stairs'},
+  {id:'deepen',name:'Extend the back',    cost:{Plank:16,Stone:10},
+   note:'Two more rows, front to back.'},
+];
+function homeWork(id){S.homeWork=S.homeWork||{};S.homeWork[id]=S.homeWork[id]||{};return S.homeWork[id];}
+function hasWork(id,w){return !!homeWork(id)[w];}
+function roomW(){
+  const id=S.inside;
+  if(!id)return 15;
+  let w=15;
+  if(isHome(id)&&hasWork(id,'widen'))w+=4;
+  return w;
+}
+function roomH(){
+  const id=S.inside;
+  if(!id)return 9;
+  let h=9;
+  if(isHome(id)&&hasWork(id,'deepen'))h+=2;
+  if(S.room==='up')h=Math.max(7,h-1);
+  return h;
+}
+function atticFor(id){
+  const fam=(typeof cottageFamily==='function')?cottageFamily(id):'';
+  const boarded=hasWork(id,'loft');
+  return {name:(id==='home'?'Your loft':(fam?fam+"'s loft":'A loft')),
+    floor:boarded?'#5A4A38':'#43382C',floorB:boarded?'#52432F':'#3C3227',
+    wall:'#3A3028',attic:true,
+    stations:boarded?[{k:'bed',x:2,y:2,label:'A bed under the rafters',act:(id==='home')?'sleep':null},
+                      {k:'table',x:9,y:2,label:'A desk',act:null}]
+                   :[],
+    props:boarded?[[12,4,'crate'],[5,5,'rug'],[7,1,'hangherb']]:[[3,3,'crate'],[9,4,'crate'],[6,2,'sackpile']]};
+}
+function openBuildOut(){
+  paused=true;
+  const id=S.inside;
+  const rows=HOME_WORK.map(w=>{
+    const done=hasWork(id,w.id);
+    const blocked2=w.need&&!hasWork(id,w.need);
+    const can=has(w.cost)&&!done&&!blocked2;
+    const costs=Object.keys(w.cost).map(k=>{
+      const short=bagCount(k)<w.cost[k];
+      return '<span style="color:'+(short?'var(--rose)':'var(--green)')+'">'+bagCount(k)+'/'+w.cost[k]+' '+k+'</span>';
+    }).join(' · ');
+    return '<div class="row"><div style="min-width:0;"><strong>'+w.name+'</strong>'
+      +(done?' <span class="hint" style="color:var(--green);">· done</span>':'')
+      +'<div class="hint">'+w.note+'</div>'
+      +'<div class="hint">'+(blocked2?'needs the stair first':costs)+'</div></div>'
+      +(done?'<span class="hint">✓</span>'
+            :'<button '+(can?'class="primary" ':'disabled ')+'data-work="'+w.id+'">Build</button>')
+      +'</div>';
+  }).join('');
+  OR('<h3>Building out</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Your own four walls. Timber off the saw bench, stone out of the ground.</div>'
+    +rows
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-work]').forEach(b=>{if(b.disabled)return;
+    b.onclick=async()=>{
+      const w=HOME_WORK.find(x=>x.id===b.dataset.work);
+      if(!has(w.cost))return;
+      payFor(w.cost);
+      homeWork(id)[w.id]=true;
+      SFX.build();await save();
+      toast(w.name+' — done. It feels different already.');
+      openBuildOut();
+    };});
+  document.getElementById('closeB').onclick=close;
+}
+/* ============================================================
+   YOUR OWN PLACE — furniture you make and put where you like.
+   ============================================================ */
+const MAKEABLE=[
+  {t:'chair',    name:'Chair',        cost:{Plank:2},            note:'Somewhere to sit.'},
+  {t:'longtable',name:'Long table',   cost:{Plank:4},            note:'Seats whoever turns up.'},
+  {t:'bench2',   name:'Bench',        cost:{Plank:3},            note:'Cheaper than chairs.'},
+  {t:'dresser',  name:'Dresser',      cost:{Plank:4,Iron:1},     note:'Brass pulls and everything.'},
+  {t:'shelfjars',name:'Jar shelf',    cost:{Plank:3,Clay:2},     note:'Preserves, on show.'},
+  {t:'rug',      name:'Rug',          cost:{Cloth:3},            note:'Warm underfoot. Walk over it.'},
+  {t:'hangherb', name:'Drying herbs', cost:{Sage:2,Rope:1},      note:'Hangs from the beam.'},
+  {t:'hangpots', name:'Pot rail',     cost:{Iron:2},             note:'Everything within reach.'},
+  {t:'barrel',   name:'Barrel',       cost:{Plank:3,Iron:1},     note:'Holds what needs holding.'},
+  {t:'crate',    name:'Crate',        cost:{Plank:2},            note:'Stackable, in theory.'},
+  {t:'bucket',   name:'Bucket',       cost:{Iron:1},             note:'A bucket.'},
+];
+function myStuff(id){S.myStuff=S.myStuff||{};S.myStuff[id]=S.myStuff[id]||[];return S.myStuff[id];}
+function canDecorate(){
+  /* your own cottage, and the home of whoever you have claimed */
+  if(S.inside==='home')return true;
+  const me=meFolk();
+  return !!(me&&S.inside===homeOf(me));
+}
+function openFurnish(){
+  paused=true;
+  const key2=roomKey();
+  const placed=myStuff(key2);
+  const rows=MAKEABLE.map(m=>{
+    const can=has(m.cost);
+    const costs=Object.keys(m.cost).map(k=>{
+      const short=bagCount(k)<m.cost[k];
+      return '<span style="color:'+(short?'var(--rose)':'var(--green)')+'">'+bagCount(k)+'/'+m.cost[k]+' '+k+'</span>';
+    }).join(' · ');
+    return '<div class="row"><div style="min-width:0;"><strong>'+m.name+'</strong>'
+      +'<div class="hint">'+m.note+'</div><div class="hint">'+costs+'</div></div>'
+      +'<button '+(can?'class="primary" ':'disabled ')+'data-make="'+m.t+'">Make</button></div>';
+  }).join('');
+  const yours=placed.length
+    ? placed.map((p,i)=>'<div class="row"><div><strong>'+((MAKEABLE.find(m=>m.t===p.t)||{}).name||p.t)+'</strong>'
+        +'<div class="hint">at '+p.x+','+p.y+'</div></div>'
+        +'<button data-take="'+i+'">Take back</button></div>').join('')
+    : '<div class="hint">Nothing of yours in here yet.</div>';
+  OR('<h3>Furnish this room</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Make a thing, then walk to where you want it and press E. '
+    +'Timber comes off the saw bench; cloth off the loom.</div>'
+    +'<h3 style="font-size:14px;margin:12px 0 6px;">Make</h3>'+rows
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">In this room</h3>'+yours
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-make]').forEach(b=>{if(b.disabled)return;
+    b.onclick=async()=>{
+      const m=MAKEABLE.find(x=>x.t===b.dataset.make);
+      if(!has(m.cost))return;
+      payFor(m.cost);
+      S.carrying=m.t;
+      SFX.craft();await save();close();
+      toast('Carrying a '+m.name.toLowerCase()+' — stand where you want it and press E.');
+    };});
+  document.querySelectorAll('[data-take]').forEach(b=>b.onclick=async()=>{
+    const i=parseInt(b.dataset.take);
+    const p=placed[i];
+    const m=MAKEABLE.find(x=>x.t===p.t);
+    placed.splice(i,1);
+    if(m)Object.keys(m.cost).forEach(k=>bagAdd(k,Math.max(1,Math.floor(m.cost[k]/2))));
+    await save();toast('Taken apart. You get some of it back.');openFurnish();
+  });
+  document.getElementById('closeB').onclick=close;
+}
+function placeFurniture(){
+  const t=S.carrying;if(!t)return false;
+  const tx=Math.floor((S.ipx+16)/TILE), ty=Math.floor((S.ipy+20)/TILE);
+  if(tx<1||ty<1||tx>=roomW()-1||ty>=roomH()-1){toast('Not against the wall.');return true;}
+  const sp=insideSpec(S.inside);
+  const clash=(sp.stations||[]).some(s=>{
+    const [w,h]=STATION_SIZE[s.k]||[1,1];
+    return tx>=s.x&&tx<s.x+w&&ty>=s.y&&ty<s.y+h;
+  })||(sp.props||[]).some(p=>p[0]===tx&&p[1]===ty)
+   ||myStuff(roomKey()).some(m=>m.x===tx&&m.y===ty);
+  if(clash){toast('Something is already there.');return true;}
+  myStuff(roomKey()).push({t,x:tx,y:ty});
+  S.carrying=null;
+  SFX.build();save();
+  toast('Set down. Looks right there.');
+  return true;
+}
 /* ============================================================
    INSIDE — you walk in, and the equipment is really there.
    ============================================================ */
@@ -3797,7 +3984,25 @@ const INSIDE={
               {k:'rack', x:10,y:2,label:'Tool rack',act:'kit',at:'forge'}],
     props:[[7,4,'haybale'],[12,4,'haybale'],[2,5,'crate'],[13,1,'hangherb'],[6,1,'barrel']]},
 };
+/* homes are two rooms: the main room, and a bedroom through the back door */
+function roomKey(){return S.inside+(S.room&&S.room!=='main'?(':'+S.room):'');}
+function bedroomFor(id){
+  const fam=(typeof cottageFamily==='function')?cottageFamily(id):'';
+  const kids=FOLK.filter(f=>homeOf(f)===id&&f.child).length;
+  const beds=[{k:'bed',x:2,y:2,label:'A bed',act:(id==='home')?'sleep':null}];
+  if(kids>0)beds.push({k:'bed',x:6,y:2,label:"The children's bed",act:null});
+  if(kids>2)beds.push({k:'bed',x:10,y:2,label:'Another bed',act:null});
+  if(kids>4)beds.push({k:'bed',x:6,y:5,label:'And another',act:null});
+  const props=[[12,5,'dresser'],[1,5,'crate'],[9,5,'chair']];
+  if(kids>0)props.push([4,5,'rug']);
+  return {name:(id==='home'?'Your bedroom':(fam?fam+"'s bedroom":'A bedroom')),
+    floor:'#4E4034',floorB:'#463A2E',wall:'#3E332A',
+    stations:beds.concat([{k:'table',x:12,y:2,label:'A washstand',act:null}]),
+    props,back:true};
+}
 function insideSpec(id){
+  if(S.room==='up')return atticFor(id);
+  if(S.room==='bed')return bedroomFor(id);
   if(INSIDE[id])return INSIDE[id];
   if(id&&id.startsWith('c')){
     const fam=(typeof cottageFamily==='function')?cottageFamily(id):'';
@@ -3815,30 +4020,67 @@ function insideSpec(id){
   }
   return null;
 }
+function isHome(id){return id==='home'||(id&&id.charAt(0)==='c'&&BLD[id]&&BLD[id].cot);}
 function enterInside(id){
+  S.room='main';
   const sp=insideSpec(id);if(!sp)return false;
   SFX.door();
   S.inside=id;
-  S.ipx=(Math.floor(IW/2))*TILE;
-  S.ipy=(IH-2)*TILE;
+  S.ipx=(Math.floor(roomW()/2))*TILE;
+  S.ipy=(roomH()-2)*TILE;
   save();return true;
 }
 function leaveInside(){
   SFX.door();
+  if(S.room==='bed'){
+    /* back into the main room */
+    S.room='main';
+    S.ipx=(IW-4)*TILE;S.ipy=2.4*TILE;
+    save();return;
+  }
   const b=BLD[S.inside];
-  S.inside=null;
+  S.inside=null;S.room='main';
   if(b){S.px=b.door.x*TILE;S.py=(b.door.y+1)*TILE;}
   save();
 }
+const PROP_SIZE={longtable:[3,1],bench2:[2,1],rug:[0,0],hangherb:[0,0],hangpots:[0,0],
+  barrel:[1,1],crate:[1,1],sackpile:[1,1],haybale:[1,1],shelfjars:[1,1],
+  chair:[1,1],dresser:[1,1],bucket:[1,1],coal:[1,1],anvil2:[1,1]};
+const STATION_SIZE={bed:[2,1],table:[2,1],longtable:[3,1],oven:[1,1],furnace:[1,1],
+  loom:[1,1],mill:[1,1],churn:[1,1],anvil:[1,1],bench:[1,1],rack:[1,1],shelf:[1,1],
+  plans:[1,1],seeds:[1,1],sacks:[1,1],herbs:[1,1],board:[1,1],hearth:[1,1]};
 function insideBlocked(px,py){
   const tx=Math.floor(px/TILE),ty=Math.floor(py/TILE);
-  if(tx<1||ty<1||tx>=IW-1||ty>=IH)return true;
+  if(tx<1||ty<1||tx>=roomW()-1||ty>=roomH())return true;
   const sp=insideSpec(S.inside);
-  if(sp)for(const st of sp.stations){
-    const w=(st.k==='bed'||st.k==='table')?2:1;
-    if(tx>=st.x&&tx<st.x+w&&ty>=st.y&&ty<st.y+1)return true;
+  if(!sp)return false;
+  for(const st of sp.stations){
+    const [w,h]=STATION_SIZE[st.k]||[1,1];
+    if(tx>=st.x&&tx<st.x+w&&ty>=st.y&&ty<st.y+h)return true;
+  }
+  for(const p of (sp.props||[])){
+    const [w,h]=PROP_SIZE[p[2]]||[1,1];
+    if(w===0)continue;                    /* rugs and hanging things are not in the way */
+    if(tx>=p[0]&&tx<p[0]+w&&ty>=p[1]&&ty<p[1]+h)return true;
+  }
+  for(const m of ((S.myStuff&&S.myStuff[S.inside])||[])){
+    const [w,h]=PROP_SIZE[m.t]||[1,1];
+    if(w===0)continue;
+    if(tx>=m.x&&tx<m.x+w&&ty>=m.y&&ty<m.y+h)return true;
   }
   return false;
+}
+function nearFolkInside(){
+  if(!S.inside)return null;
+  let best=null,bd=1.8*TILE;
+  FOLK.forEach(f=>{
+    if(isMe(f))return;
+    if(isIndoorsNow(f)!==S.inside)return;
+    const w=IS[f.id];if(!w||!w.set)return;
+    const d=Math.hypot(w.x-(S.ipx+16),w.y-(S.ipy+20));
+    if(d<bd){bd=d;best=f;}
+  });
+  return best;
 }
 function nearStation(){
   const sp=insideSpec(S.inside);if(!sp)return null;
@@ -3852,7 +4094,7 @@ function nearStation(){
 function drawInside(){
   const id=S.inside, sp=insideSpec(id);
   if(!sp)return;
-  const RW=IW*TILE, RH=IH*TILE;
+  const RW=roomW()*TILE, RH=roomH()*TILE;
   ctx.fillStyle='#0C0A08';ctx.fillRect(0,0,cw,ch);
   const sc=Math.min(cw/RW,ch/RH)*0.96;
   ctx.save();
@@ -3877,7 +4119,7 @@ function drawInside(){
     ctx.fillStyle='#241D16';ctx.fillRect(wx+11,wy,2,16);ctx.fillRect(wx,wy+7,24,2);
   }
   /* floorboards */
-  for(let y=1;y<IH;y++)for(let half=0;half<2;half++){
+  for(let y=1;y<roomH();y++)for(let half=0;half<2;half++){
     const by=y*TILE+half*16;
     const tone=hashStr(id+'f'+y+half)%2;
     const base=tone?sp.floor:sp.floorB;
@@ -3897,17 +4139,40 @@ function drawInside(){
     }
   }
   const layerProps=[];
+  /* the inner door to the bedroom */
+  if(isHome(id)&&S.room!=='bed'){
+    const bx=(roomW()-3)*TILE;
+    ctx.fillStyle='#171310';ctx.fillRect(bx-4,0,TILE+8,TILE-4);
+    ctx.fillStyle='#43301E';ctx.fillRect(bx,2,TILE,TILE-8);
+    ctx.fillStyle='rgba(0,0,0,0.30)';ctx.fillRect(bx+3,6,TILE-6,TILE-16);
+    ctx.fillStyle='#C9A44E';ctx.fillRect(bx+TILE-9,TILE/2-4,3,3);
+    ctx.fillStyle='rgba(237,230,214,0.55)';ctx.font='9px Inter';ctx.textAlign='center';
+    ctx.fillText('bedroom',bx+16,TILE+9);
+  }
   /* the way out */
-  const dx=Math.floor(IW/2)*TILE;
+  const dx=Math.floor(roomW()/2)*TILE;
   ctx.fillStyle='#171310';ctx.fillRect(dx-4,RH-8,TILE+8,8);
   ctx.fillStyle='#3E2C1C';ctx.fillRect(dx,RH-6,TILE,6);
   ctx.fillStyle='rgba(237,230,214,0.5)';ctx.font='9px Inter';ctx.textAlign='center';
-  ctx.fillText('out',dx+16,RH-10);
+  ctx.fillText(S.room==='bed'?'back':'out',dx+16,RH-10);
   /* scenery */
   (sp.props||[]).forEach(p=>{
     const [x,y,t]=p;
     layerProps.push({y:(y+1)*TILE,f:()=>drawProp(t,x,y)});
   });
+  /* and anything you have put here yourself */
+  ((S.myStuff&&S.myStuff[roomKey()])||[]).forEach(m=>{
+    layerProps.push({y:(m.y+1)*TILE,f:()=>drawProp(m.t,m.x,m.y)});
+  });
+  /* the piece in your arms, ghosted where it would land */
+  if(S.carrying){
+    const tx=Math.floor((S.ipx+16)/TILE), ty=Math.floor((S.ipy+20)/TILE);
+    layerProps.push({y:(ty+1)*TILE+1,f:()=>{
+      ctx.globalAlpha=0.55;drawProp(S.carrying,tx,ty);ctx.globalAlpha=1;
+      ctx.strokeStyle='#E0A63D';ctx.lineWidth=2;
+      ctx.strokeRect(tx*TILE,ty*TILE,TILE,TILE);
+    }});
+  }
   /* equipment */
   const near=nearStation();
   const layer=[];
@@ -3932,8 +4197,8 @@ function drawInside(){
     w.idle-=1/60;
     if(w.idle<=0){
       w.idle=1.6+Math.random()*3.2;
-      w.tx=Math.max(TILE*1.5,Math.min((IW-2)*TILE,home.x+(Math.random()-0.5)*TILE*2.6));
-      w.ty=Math.max(TILE*1.6,Math.min((IH-1.6)*TILE,home.y+(Math.random()-0.5)*TILE*1.8));
+      w.tx=Math.max(TILE*1.5,Math.min((roomW()-2)*TILE,home.x+(Math.random()-0.5)*TILE*2.6));
+      w.ty=Math.max(TILE*1.6,Math.min((roomH()-1.6)*TILE,home.y+(Math.random()-0.5)*TILE*1.8));
     }
     const dx=w.tx-w.x,dy=w.ty-w.y,d=Math.hypot(dx,dy);
     if(d>2){const sp2=34/60;w.x+=dx/d*Math.min(sp2,d);w.y+=dy/d*Math.min(sp2,d);
@@ -3970,13 +4235,28 @@ function drawInside(){
   ctx.fillStyle='rgba(0,0,0,0.20)';
   ctx.fillRect(0,0,20,RH);ctx.fillRect(RW-20,0,20,RH);
   ctx.restore();
+  /* a prompt to make things, if this is your place */
+  if(canDecorate()){
+    ctx.fillStyle='rgba(10,14,12,0.72)';ctx.fillRect(cw-176,36,168,26);
+    ctx.fillStyle='rgba(224,166,61,0.95)';ctx.font='11px Inter';ctx.textAlign='center';
+    ctx.fillText(S.carrying?'E to set it down · F to cancel':'F — furnish this room',cw-92,53);
+  }
   /* name plate */
   ctx.fillStyle='rgba(10,12,10,0.7)';ctx.fillRect(0,0,cw,30);
   ctx.fillStyle='rgba(237,230,214,0.92)';ctx.font='13px Fraunces, serif';ctx.textAlign='center';
   ctx.fillText(sp.name,cw/2,20);
 }
 function useStation(){
+  if(S.carrying&&placeFurniture())return;
+  const who=nearFolkInside();
   const st=nearStation();
+  /* whoever is closer wins */
+  if(who){
+    const w=IS[who.id];
+    const dw=Math.hypot(w.x-(S.ipx+16),w.y-(S.ipy+20));
+    const ds=st?Math.hypot((st.x+0.5)*TILE-(S.ipx+16),(st.y+1)*TILE-(S.ipy+20)):999;
+    if(dw<=ds){openTalk(who);return;}
+  }
   if(!st||!st.act){toast('Nothing to do there.');return;}
   if(st.act==='craft')openCraft(st.at,st.k);
   else if(st.act==='kit')openCraft('forge',st.k);
@@ -3985,6 +4265,7 @@ function useStation(){
   else if(st.act==='seeds')openSupply();
   else if(st.act==='bag')openBag();
   else if(st.act==='eat')openEat();
+  else if(st.act==='furnish')openFurnish();
   else if(st.act==='sleep')openSleep();
 }
 
@@ -4825,13 +5106,23 @@ function loop(ts){
         pstep+=dt*8;
         pface=Math.abs(vx)>Math.abs(vy)?(vx>0?2:3):(vy>0?1:0);
         /* stepping out of the bottom door */
-        const bx=Math.floor(IW/2);
-        if(S.ipy>(IH-1.2)*TILE&&Math.abs(Math.floor((S.ipx+16)/TILE)-bx)<=1){leaveInside();}
+        const bx=Math.floor(roomW()/2);
+        if(S.ipy>(roomH()-1.2)*TILE&&Math.abs(Math.floor((S.ipx+16)/TILE)-bx)<=1){leaveInside();}
+        /* stepping through into the bedroom */
+        if(isHome(S.inside)&&S.room!=='bed'&&S.ipy<1.5*TILE
+           &&Math.abs(Math.floor((S.ipx+16)/TILE)-(roomW()-3))<=1){
+          S.room='bed';SFX.door();
+          S.ipx=(IW/2)*TILE;S.ipy=(IH-2)*TILE;save();
+        }
       }else pstep=0;
       const h3=document.getElementById('hint');
       if(h3&&h3.dataset.t!=='1'){
+        const who=nearFolkInside();
         const st=nearStation();
-        if(st&&st.act){h3.innerText=st.label+'  (E)';h3.style.display='block';}
+        const dw=who?Math.hypot(IS[who.id].x-(S.ipx+16),IS[who.id].y-(S.ipy+20)):999;
+        const ds=st?Math.hypot((st.x+0.5)*TILE-(S.ipx+16),(st.y+1)*TILE-(S.ipy+20)):999;
+        if(who&&dw<=ds){h3.innerText='Talk to '+firstName(who.name)+'  (E)';h3.style.display='block';}
+        else if(st&&st.act){h3.innerText=st.label+'  (E)';h3.style.display='block';}
         else h3.style.display='none';
       }
       const mm2=Math.floor(S.min);
