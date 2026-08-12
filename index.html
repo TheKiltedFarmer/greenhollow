@@ -88,6 +88,7 @@
     <span class="stam mono" id="stamTag"></span>
   </div>
   <div class="right">
+    <span id="wx" class="hint" style="margin-right:8px;"></span>
     <button id="sndBtn" title="Sound">&#9834;</button>
     <button id="bagBtn">Basket</button>
     <button id="boardBtn">Board</button>
@@ -371,7 +372,8 @@ function newGame(){
           conrad:'cook',amanda:'seedkeep',jake:'maker'},
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
-    delve:null, reports:[], stock:{}, inside:null, room:'main', ipx:0, ipy:0,
+    delve:null, reports:[], stock:{}, inside:null, room:'main', ipx:0, ipy:0, gear:{}, said:[],
+    weather:'fair', festDone:{}, festCatch:{},
     deck:null, cards:null, bones:null, stones:null, match:null,
     fish:null, hunt:null, myStuff:{}, carrying:null, fish:null, hunt:null,
     farm:{},bag:[{item:'Turnip seeds',n:6},{item:'Carrot seeds',n:4},{item:'Wood',n:8},{item:'Stone',n:4},{item:'Fibre',n:4}],
@@ -389,6 +391,8 @@ async function load(){
       S.kit=S.kit||{hoe:0,axe:0,pick:0,can:0};
       if(S.inside===undefined)S.inside=null;
       S.myStuff=S.myStuff||{};S.room=S.room||'main';S.carrying=S.carrying||null;
+      S.gear=S.gear||{};S.said=S.said||[];S.weather=S.weather||'fair';
+      S.festDone=S.festDone||{};S.festCatch=S.festCatch||{};
       S.deck=S.deck||starterDeck();
       S.cards=null;S.bones=null;S.stones=null;S.match=null;
       S.fish=null;S.hunt=null;
@@ -1989,6 +1993,7 @@ function draw(){
   const vg=ctx.createRadialGradient(cw/2,ch/2,Math.min(cw,ch)/3,cw/2,ch/2,Math.max(cw,ch)/1.1);
   vg.addColorStop(0,'rgba(10,18,13,0)');vg.addColorStop(1,'rgba(10,18,13,0.5)');
   ctx.fillStyle=vg;ctx.fillRect(0,0,cw,ch);
+  if(typeof drawWeather==="function")drawWeather();
 }
 
 /* ================= VILLAGER POSITIONS ================= */
@@ -2066,6 +2071,9 @@ function folkPos(f){
 /* ================= INPUT ================= */
 const keys={};let pstep=0,pface=1;
 window.addEventListener('keydown',e=>{
+  if(!paused&&!S.inside&&!S.fish&&!S.hunt&&S.scene==='world'&&e.key.toLowerCase()==='g'){
+    e.preventDefault();openGear();return;
+  }
   if(!paused&&S.scene==='fishing'&&S.fish){
     const k=e.key.toLowerCase();
     if(k==='e'||k===' '||k==='enter'){e.preventDefault();if(!e.repeat)fishAct(true);return;}
@@ -2115,6 +2123,7 @@ window.addEventListener('keydown',e=>{
       dgSwing();return;
     }
     if(k==='q'){e.preventDefault();dgLeave(false);return;}
+    if(k==='r'){e.preventDefault();dgSearch();return;}
   }
   keys[e.key.toLowerCase()]=true;
   if(!paused){
@@ -2660,10 +2669,10 @@ function hintText(){
   if(n){
     if(n.type==='folk')return 'Talk to '+n.f.name.split(' ')[0]+' — '+folkDoing(n.f)+'  (E)';
     if(n.type==='well')return 'Fill the watering can  (E)';
-    if(n.type==='table')return 'The sharing table  (E)';
+    if(n.type==='table')return festivalToday()?(festivalToday().n+'  (E)'):'The sharing table  (E)';
     if(n.type==='board')return 'The Commons Hall — go in  (E)';
     if(n.type==='supply')return 'The Supply House — go in  (E)';
-    if(n.type==='door')return 'A door in the hillside  (E)';
+    if(n.type==='door')return 'A door in the hillside  (E)  ·  G for your kit';
     if(n.type==='in')return 'Go inside  (E)';
     if(n.type==='fish')return 'Fish from the jetty  (E)';
     if(n.type==='hunt')return 'Wait in the hide  (E)  — 3 vigour';
@@ -2716,7 +2725,7 @@ function interact(){
   if(n){
     if(n.type==='folk')return openTalk(n.f);
     if(n.type==='well'){S.cans=canCap();drawToolbar();SFX.water();toast('Watering can filled');save();return;}
-    if(n.type==='table')return openTable();
+    if(n.type==='table'){if(festivalToday()&&openFestival())return;return openTable();}
     if(n.type==='board'){if(enterInside('hall'))return;return openBoard();}
     if(n.type==='supply'){if(enterInside('supply'))return;return openSupply();}
     if(n.type==='door')return openDoor();
@@ -2939,6 +2948,156 @@ const DEPTHS=[
    foes:['three enormous rats','a rockfall that moves','something pale that swims'],loot:['Stone','Ore','Rope'],boss:'the one who cut the steps'},
 ];
 const ROOMS=['fight','fight','fight','find','find','trap','shrine','rest','fork'];
+
+/* ============================================================
+   CHECKS, TRAPS AND CURSES — dice you can hear.
+   ============================================================ */
+const SAID_MAX=140;
+function saidRecently(t){S.said=S.said||[];return S.said.indexOf(t)>=0;}
+function markSaid(t){S.said=S.said||[];S.said.push(t);while(S.said.length>SAID_MAX)S.said.shift();}
+function freshLine(pool,subs){
+  const unused=pool.filter(p=>!saidRecently(p));
+  const src2=unused.length?unused:pool;
+  let line=src2[Math.floor(Math.random()*src2.length)];
+  markSaid(line);
+  if(subs)Object.keys(subs).forEach(k=>{line=line.split('{'+k+'}').join(subs[k]);});
+  return line;
+}
+const CHECK_KINDS={
+  spot :{n:'keen eyes',   stat:'wits',  verb:'looks closer'},
+  trap :{n:'quick hands', stat:'hands', verb:'reaches in'},
+  curse:{n:'steady heart',stat:'heart', verb:'holds steady'},
+  force:{n:'a good shove',stat:'back',  verb:'puts a shoulder to it'},
+};
+function classStat(cls,stat){
+  const map={
+    fighter:{wits:0,hands:1,heart:2,back:4},
+    ranger :{wits:3,hands:3,heart:1,back:1},
+    mage   :{wits:4,hands:1,heart:3,back:0},
+    healer :{wits:2,hands:3,heart:4,back:1},
+  };
+  return (map[cls]||{})[stat]||0;
+}
+function partyBest(stat){
+  const D=S.dg;if(!D)return {who:null,bonus:0};
+  let best={who:null,bonus:-99};
+  D.party.filter(p=>p.hp>0).forEach(p=>{
+    const b=classStat(p.cls,stat);
+    if(b>best.bonus)best={who:p,bonus:b};
+  });
+  return best.who?best:{who:D.party[0],bonus:0};
+}
+const CHECK_PASS=[
+ "{who} spots it before anybody's weight goes on it.",
+ "{who} catches it — a hair out of place, and that was enough.",
+ "{who} puts a hand out and everyone stops. Good instinct.",
+ "{who} sees the join in the stone and works out what it means.",
+ "{who} notices the dust sitting wrong and says so, quietly.",
+ "{who} has a feeling about it, and this time the feeling is right.",
+ "{who} counts the flagstones and one of them does not belong.",
+ "{who} listens instead of looking, which turns out to be the trick.",
+];
+const CHECK_FAIL=[
+ "{who} looks right at it and sees nothing at all.",
+ "{who} declares it safe with real confidence.",
+ "{who} misses it entirely, which will be discussed later.",
+ "{who} is busy looking at something else more interesting.",
+ "{who} gives it a glance and moves on. That glance was not enough.",
+ "{who} finds a very ordinary rock and is pleased about it.",
+];
+const SNARES=[
+ {id:'dart',  n:'a dart from the wall',      dmg:5,
+  hit:"A dart takes {who} in the arm. It stings more than it should.",
+  dodge:"{who} hears the click and is somewhere else by the time it fires."},
+ {id:'pit',   n:'a pit under the flagstones',dmg:6,
+  hit:"The floor gives and {who} goes in up to the chest, swearing all the way down.",
+  dodge:"{who} steps over the gap without ever knowing it was there."},
+ {id:'gas',   n:'a puff of something sour',  dmg:4,
+  hit:"Something sour gets into {who}'s lungs. It takes a while to argue back out.",
+  dodge:"{who} holds their breath on instinct and walks straight through it."},
+ {id:'net',   n:'a net from above',          dmg:3,
+  hit:"A net drops on {who}, who spends an undignified minute in it.",
+  dodge:"{who} sidesteps and the net lands on nothing at all."},
+ {id:'stone', n:'a falling stone',           dmg:7,
+  hit:"A stone the size of a loaf catches {who} across the shoulder.",
+  dodge:"{who} looks up at exactly the right moment."},
+ {id:'spike', n:'a spike in the dark',       dmg:6,
+  hit:"{who} finds a spike with their shin. There is a noise.",
+  dodge:"{who}'s foot stops an inch short, for no reason they can name."},
+];
+const HEXES=[
+ {id:'heavy', n:'The heavy step', t:'Everything weighs more down here.'},
+ {id:'sour',  n:'The sour luck',  t:'Your dice have gone strange.'},
+ {id:'thirst',n:'The long thirst',t:'You are tired in a way sleep will not fix.'},
+ {id:'echo',  n:'The echo',       t:'Something repeats what you say, a beat late.'},
+ {id:'cold',  n:'The cold hand',  t:'You cannot get warm.'},
+];
+/* ---- kit you carry down, and keep ---- */
+const DELVE_GEAR=[
+  {id:'lamp',   n:'A better lamp',     cost:{Iron:2,Cloth:1},   t:'You see further.',                      eff:'+1 to looking'},
+  {id:'boots',  n:'Nailed boots',      cost:{Leather:2,Iron:1}, t:'You keep your footing on wet stone.',   eff:'+2 against traps'},
+  {id:'charm',  n:'A hag stone',       cost:{Stone:4,Rope:1},   t:'Somebody swore it works. It might.',    eff:'+2 against curses'},
+  {id:'pack',   n:'A proper pack',     cost:{Leather:3,Rope:2}, t:'You can carry more back up.',           eff:'more loot'},
+  {id:'whet',   n:'A whetstone',       cost:{Stone:3,Iron:1},   t:'Everything cuts a little better.',      eff:'+1 damage'},
+  {id:'kit',    n:'A field kit',       cost:{Cloth:3,Sage:2},   t:'Bandages, and somebody who can use them.',eff:'start with more heart'},
+  {id:'rope',   n:'Forty feet of rope',cost:{Rope:3},           t:'Gets you into places, and out of them.',eff:'+1 to looking'},
+  {id:'chalk',  n:'A stick of chalk',  cost:{Clay:2},           t:'You will not walk the same room twice.',eff:'maps the level'},
+];
+function hasGear(id){S.gear=S.gear||{};return !!S.gear[id];}
+function gearBonus(kind){
+  let b=0;
+  if(kind==='spot'&&hasGear('lamp'))b+=1;
+  if(kind==='spot'&&hasGear('rope'))b+=1;
+  if(kind==='trap'&&hasGear('boots'))b+=2;
+  if(kind==='curse'&&hasGear('charm'))b+=2;
+  return b;
+}
+function rollCheck(kind,dc){
+  const K=CHECK_KINDS[kind]||CHECK_KINDS.spot;
+  const pb=partyBest(K.stat);
+  const roll=1+Math.floor(Math.random()*20);
+  const gb=gearBonus(kind);
+  const bonus=pb.bonus+gb;
+  const total=roll+bonus+((S.dg&&S.dg.curse==='sour')?-2:0);
+  return {roll,bonus,total,pass:total>=dc,
+          who:pb.who?pb.who.name:'somebody',stat:K.n,verb:K.verb};
+}
+function dgCheckLine(r,dc){
+  return r.who+' rolls '+r.roll+(r.bonus?(' + '+r.bonus):'')+' against '+dc+' — '
+    +(r.pass?'well enough':'not enough')+'.';
+}
+function openGear(){
+  paused=true;
+  const rows=DELVE_GEAR.map(g=>{
+    const have=hasGear(g.id);
+    const can=has(g.cost);
+    const costs=Object.keys(g.cost).map(k=>{
+      const short=bagCount(k)<g.cost[k];
+      return '<span style="color:'+(short?'var(--rose)':'var(--green)')+'">'+bagCount(k)+'/'+g.cost[k]+' '+k+'</span>';
+    }).join(' · ');
+    return '<div class="row"><div style="min-width:0;"><strong>'+g.n+'</strong>'
+      +(have?' <span class="hint" style="color:var(--green)">· packed</span>':'')
+      +'<div class="hint">'+g.t+'</div>'
+      +'<div class="hint" style="color:var(--amber);">'+g.eff+'</div>'
+      +(have?'':'<div class="hint">'+costs+'</div>')+'</div>'
+      +(have?'<span class="hint">✓</span>'
+            :'<button '+(can?'class="primary" ':'disabled ')+'data-gear="'+g.id+'">Make</button>')
+      +'</div>';
+  }).join('');
+  OR('<h3>What you take down with you</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Made once, carried every time after.</div>'
+    +rows+'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-gear]').forEach(b=>{if(b.disabled)return;
+    b.onclick=async()=>{
+      const g=DELVE_GEAR.find(x=>x.id===b.dataset.gear);
+      if(!has(g.cost))return;
+      payFor(g.cost);S.gear=S.gear||{};S.gear[g.id]=true;
+      SFX.build();await save();
+      toast(g.n+' — packed. It goes down with you from now on.');
+      openGear();
+    };});
+  document.getElementById('closeB').onclick=close;
+}
 const TRAPS=[
   {t:'The floor gives way.',    dmg:6, quip:'Everyone lands badly and pretends they meant to.'},
   {t:'Something bites in the dark.',dmg:5,quip:'Nobody sees what.'},
@@ -3435,6 +3594,12 @@ function fishUpdate(dt){
         F.msg='You land '+F.caught.name.toLowerCase()+'. Somebody has been here before you.';}
       else{
         F.caught={k:F.hooked.k,n:(FISH_ART[F.hooked.k]||{}).worth||1};
+        const fs=festivalToday();
+        if(fs&&fs.contest==='fish'){
+          const kk=fs.id+'-'+Math.floor((S.day-1)/56);
+          S.festCatch=S.festCatch||{};
+          S.festCatch[kk]=(S.festCatch[kk]||0)+F.caught.n;
+        }
         bagAdd(F.hooked.k,F.caught.n);
         F.msg=(F.caught.n>1?'Two ':'A ')+F.hooked.k.toLowerCase()+(F.caught.n>1?'!':'.')+' Landed clean.';
         S.standing+=1;save();
@@ -4333,7 +4498,7 @@ function makeDungeon(depth){
   Object.values(rooms).forEach(r=>{
     if(r.kind!=='fight')return;
     const roll=Math.random();
-    r.kind=roll<0.16?'treasure':(roll<0.26?'rest':'fight');
+    r.kind=roll<0.15?'treasure':(roll<0.24?'rest':(roll<0.32?'shrine':'fight'));
   });
   return {rooms,w,h,start:[0,Math.floor(h/2)]};
 }
@@ -4365,7 +4530,7 @@ function fillRoom(r,depth){
   }
   /* a trap, hidden until somebody spots it */
   if(r.kind!=='start'&&Math.random()<0.42){
-    const T2=TRAPS[Math.floor(Math.random()*TRAPS.length)];
+    const T2=SNARES[Math.floor(Math.random()*SNARES.length)];
     r.trap={id:T2.id,x:(3+Math.random()*(DW-6))*TILE,y:(3+Math.random()*(DH-6))*TILE,
             found:false,sprung:false};
   }
@@ -4383,8 +4548,9 @@ function enterDeep(cls,mates){
   const dun=makeDungeon(depth);
   const theme=DEPTHS[Math.floor(Math.random()*DEPTHS.length)];
   const me=(typeof meFolk==='function')&&meFolk();
+  const kitBoost=hasGear('kit')?4:0;
   const party=[{id:S.claimed||'me',name:me?firstName(me.name):(S.player.name||'you'),
-                cls,hp:classById(cls).hp,max:classById(cls).hp,you:true,faints:0}];
+                cls,hp:classById(cls).hp+kitBoost,max:classById(cls).hp+kitBoost,you:true,faints:0}];
   const spare=CLASSES.filter(c=>c.id!==cls);
   (mates||[]).forEach((id,i)=>{
     const f=FOLK.find(x=>x.id===id);if(!f)return;
@@ -4395,9 +4561,27 @@ function enterDeep(cls,mates){
         rooms:dun.rooms,w:dun.w,h:dun.h,rx:dun.start[0],ry:dun.start[1],
         px:(DW/2)*TILE,py:(DH-2)*TILE,face:0,step:0,
         party,loot:{},swing:0,hurt:0,inv:0,log:[]};
+  /* the deep sometimes takes a dislike to you */
+  S.dg.curse=null;
+  if(depth>1&&Math.random()<0.55){
+    const hex=HEXES[Math.floor(Math.random()*HEXES.length)];
+    const c=rollCheck('curse',15);
+    if(c.pass){
+      S.dg.curseShrugged=hex.n+' — '+c.who+' felt it coming and shook it off.';
+    }else{
+      S.dg.curse=hex.id;
+      S.dg.curseName=hex.n;
+      S.dg.curseText=hex.t;
+    }
+  }
+  if(hasGear('chalk')){
+    Object.values(S.dg.rooms).forEach(r=>{r.mapped=true;});
+  }
   fillRoom(roomAt(S.dg.rx,S.dg.ry),depth);
   S.scene='deep';paused=false;close();
-  toast('Down into '+theme.name+'. '+theme.blurb);
+  if(S.dg.curse)toast(S.dg.curseName+'. '+S.dg.curseText);
+  else if(S.dg.curseShrugged)toast(S.dg.curseShrugged);
+  else toast('Down into '+theme.name+'. '+theme.blurb);
   save();
 }
 function dgBlocked(px,py){
@@ -4438,7 +4622,7 @@ function dgMove(dt){
   const m=Math.hypot(vx,vy);
   if(m>0.1){
     vx/=Math.max(1,m);vy/=Math.max(1,m);
-    const sp=142*dt;
+    const sp=(D.curse==='heavy'?104:142)*dt;
     const nx=D.px+vx*sp, ny=D.py+vy*sp;
     if(!dgBlocked(nx+16,D.py+20))D.px=nx;
     if(!dgBlocked(D.px+16,ny+20))D.py=ny;
@@ -4447,6 +4631,26 @@ function dgMove(dt){
   }else D.step=0;
   const tx=Math.floor((D.px+16)/TILE), ty=Math.floor((D.py+20)/TILE);
   const alive=(r.foes||[]).filter(f=>f.hp>0).length;
+  /* a trap you have not found goes off under you */
+  if(r.trap&&!r.trap.sprung){
+    const td=Math.hypot(r.trap.x-(D.px+16),r.trap.y-(D.py+20));
+    if(td<22){
+      r.trap.sprung=true;
+      const T2=SNARES.find(t=>t.id===r.trap.id)||SNARES[0];
+      const c=rollCheck('trap',r.trap.found?8:13);
+      const me2=D.party.find(p=>p.you);
+      if(c.pass){
+        toast(T2.dodge.split('{who}').join(c.who));
+      }else{
+        me2.hp-=T2.dmg;D.hurt=0.4;D.inv=0.8;
+        SFX.hurt();
+        toast(T2.hit.split('{who}').join(c.who));
+        if(me2.hp<=0){me2.hp=0;me2.faints++;dgDown();}
+      }
+      D.lastCheck=dgCheckLine(c,r.trap.found?8:13);
+      save();
+    }
+  }
   if(alive===0){
     if(ty<1&&r.doors.n)dgGo(0,-1);
     else if(ty>=DH-1&&r.doors.s)dgGo(0,1);
@@ -4464,6 +4668,14 @@ function dgMove(dt){
   });
   D.hurt=Math.max(0,D.hurt-dt);
   D.inv=Math.max(0,D.inv-dt);
+  /* the long thirst wears at you */
+  if(D.curse==='thirst'){
+    D.drain=(D.drain||0)+dt;
+    if(D.drain>9){D.drain=0;
+      const me3=D.party.find(p=>p.you);
+      if(me3&&me3.hp>2){me3.hp-=1;D.hurt=0.2;}
+    }
+  }
   (r.foes||[]).forEach(f=>{
     if(f.hp<=0)return;
     f.hurt=Math.max(0,f.hurt-dt);
@@ -4490,7 +4702,7 @@ function dgSearch(){
     const c=rollCheck('spot',11);
     if(c.pass){r.trap.found=true;
       found.push(freshLine(CHECK_PASS,{who:c.who})+' There is '+
-        (TRAPS.find(t=>t.id===r.trap.id)||{}).n+' here.');}
+        (SNARES.find(t=>t.id===r.trap.id)||{}).n+' here.');}
     else found.push(freshLine(CHECK_FAIL,{who:c.who}));
     D.lastCheck=dgCheckLine(c,11);
   }
@@ -4518,7 +4730,7 @@ function dgSwing(){
     const dx=f.x-D.px,dy=f.y-D.py,d=Math.hypot(dx,dy);
     if(d>reach)return;
     if(((dx/d)*dirs[0]+(dy/d)*dirs[1])<0.35)return;
-    const dmg=2+Math.floor(Math.random()*c.dmg);
+    const dmg=2+Math.floor(Math.random()*c.dmg)+(hasGear('whet')?1:0);
     f.hp-=dmg;f.hurt=0.25;f.knock=0.12;f.kx=dx/d;f.ky=dy/d;hit++;
     if(f.hp<=0){
       const t=depthLoot();D.loot[t.item]=(D.loot[t.item]||0)+1;
@@ -4719,9 +4931,13 @@ function drawDeep(){
   ctx.fillStyle=hp/mxh<0.3?'#C4493C':'#6FA85C';ctx.fillRect(18,32,170*Math.max(0,hp/mxh),10);
   ctx.fillStyle='rgba(237,230,214,0.6)';ctx.font='10px Inter';
   ctx.fillText(classById(me2.cls).name+'  ·  '+Math.max(0,Math.round(hp))+'/'+mxh,18,58);
+  if(D.curse){
+    ctx.fillStyle='rgba(180,120,200,0.95)';ctx.font='10px Inter';
+    ctx.fillText('• '+D.curseName,18,74);
+  }
   const mw=8,ox=cw-10-(D.w*mw),oy=12;
   Object.values(D.rooms).forEach(rm=>{
-    const seen=rm.seen||rm.kind==='start';
+    const seen=rm.seen||rm.mapped||rm.kind==='start';
     if(!seen&&!(Math.abs(rm.x-D.rx)+Math.abs(rm.y-D.ry)===1))return;
     ctx.fillStyle=(rm.x===D.rx&&rm.y===D.ry)?'#E0A63D':(seen?'rgba(237,230,214,0.45)':'rgba(237,230,214,0.15)');
     ctx.fillRect(ox+rm.x*mw,oy+rm.y*mw,mw-2,mw-2);
@@ -4732,7 +4948,7 @@ function drawDeep(){
   else if(r.kind==='boss'&&D.bossDown){ctx.fillStyle='rgba(224,166,61,0.95)';
     ctx.fillText('Stairs down. E to go deeper, Q to climb out.',cw/2,ch-16);}
   else{ctx.fillStyle='rgba(237,230,214,0.6)';
-    ctx.fillText('Clear. Q to climb out.',cw/2,ch-16);}
+    ctx.fillText('Clear.  R to search the room  ·  Q to climb out.',cw/2,ch-16);}
 }
 /* ============================================================
    BUILDING OUT — rooms grow, and there is a stair.
@@ -5679,6 +5895,12 @@ function cardEnd(won){
 }
 function renderCards(){
   const C=S.cards;if(!C)return;
+  /* they say something now and then */
+  if(C.over)C.say=tableSay(C.over==='you'?'win':'lose',C.oppName);
+  else if(!C.say||Math.random()<0.34){
+    const tight=Math.abs(C.you.heart-C.them.heart)<5&&C.round>3;
+    C.say=tableSay(tight?'close':'idle',C.oppName);
+  }
   const cardHtml=(id,extra,idx)=>{
     const d=cardById(id);if(!d)return '';
     const affordable=(C.turn==='you'&&!C.over&&d.c<=C.you.seed);
@@ -5708,6 +5930,7 @@ function renderCards(){
     +'<div style="height:1px;background:var(--line);margin:10px 0;"></div>'
     +'<div style="display:flex;flex-wrap:wrap;margin:8px 0;">'+line(C.you,true)+'</div>'
     +'<div class="row">'+heart(C.you)+'</div>'
+    +chatBox(C.oppName,C.say)
     +'<div class="card" style="margin:10px 0;min-height:58px;">'
     +C.log.map(l=>'<div class="hint">· '+esc(l)+'</div>').join('')+'</div>'
     +(C.over
@@ -5719,6 +5942,7 @@ function renderCards(){
         +'<button id="quitB">Fold</button></div>'));
   document.querySelectorAll('[data-play]').forEach(b=>{if(b.disabled)return;
     b.onclick=()=>cardPlay(C.you.hand[parseInt(b.dataset.play)],parseInt(b.dataset.play));});
+  paintTalkFace(C.opp);
   const e1=document.getElementById('endB');if(e1)e1.onclick=cardEndTurn;
   const q1=document.getElementById('quitB');if(q1)q1.onclick=()=>{S.cards=null;close();};
   const a1=document.getElementById('againB');if(a1)a1.onclick=()=>openCards(C.opp);
@@ -5817,13 +6041,16 @@ function renderBones(){
   }else{
     body='<div class="acts"><button class="primary" id="nextB">'+(B.round>5?'Done':'Next round')+'</button></div>';
   }
+  if(!B.say||Math.random()<0.4)B.say=tableSay(B.round>4?'close':'idle',B.name);
   OR('<h3>Three Bones <span class="hint" style="font-weight:400;">· round '+Math.min(5,B.round)+' of 5</span></h3>'
     +'<div class="row"><div><strong>You</strong></div><span class="hint">'+B.you+'</span></div>'
     +'<div class="row"><div><strong>'+esc(B.name)+'</strong></div><span class="hint">'+B.them+'</span></div>'
+    +chatBox(B.name,B.say)
     +'<div class="card" style="margin:10px 0;min-height:52px;">'
     +(B.log.length?B.log.slice(-3).map(l=>'<div class="hint">· '+esc(l)+'</div>').join(''):'<div class="hint">Three dice each. Say what you rolled — or don\u2019t.</div>')
     +'</div>'+body
     +'<div class="acts" style="margin-top:6px;"><button id="leaveB">Leave the table</button></div>');
+  paintTalkFace(B.opp);
   const r=document.getElementById('rollB');
   if(r)r.onclick=()=>{B.roll=bonesRoll();B.phase='claim';SFX.pick();renderBones();};
   document.querySelectorAll('[data-claim]').forEach(b=>b.onclick=()=>{
@@ -5997,6 +6224,291 @@ function renderMatch(){
   const a=document.getElementById('againB');
   if(a)a.onclick=()=>openMatch(M2.opp);
   document.getElementById('leaveB').onclick=()=>{S.match=null;close();};
+}
+
+/* ============================================================
+   WEATHER — it decides a good deal of your day.
+   ============================================================ */
+const WEATHER={
+  fair   :{n:'Fair',        t:'A clear sky and nothing to complain about.', water:0, grow:1,   chance:{spring:.32,summer:.40,autumn:.28,winter:.22}},
+  cloud  :{n:'Overcast',    t:'Grey, close, and threatening nothing.',      water:0, grow:1,   chance:{spring:.22,summer:.18,autumn:.26,winter:.24}},
+  rain   :{n:'Rain',        t:'Everything gets watered whether you like it or not.', water:1, grow:1, chance:{spring:.26,summer:.14,autumn:.24,winter:.16}},
+  storm  :{n:'A storm',     t:'Stay in if you can. Things come loose.',     water:1, grow:1,   chance:{spring:.08,summer:.10,autumn:.10,winter:.06}},
+  heat   :{n:'A hot spell', t:'The ground dries before you have finished walking away from it.', water:-1, grow:1, chance:{spring:.04,summer:.16,autumn:.02,winter:0}},
+  frost  :{n:'Frost',       t:'Hard ground and white grass. Tender things suffer.', water:0, grow:0, chance:{spring:.08,summer:0,autumn:.10,winter:.32}},
+};
+const WEATHER_LINE={
+  fair :["Not a cloud. Make the most of it.","Good drying weather, as somebody always says."],
+  cloud:["Grey all the way to the hills.","It cannot decide, and neither can anybody else."],
+  rain :["Rain since before light. The rows are watered.","Steady rain. Nobody has to carry a can today."],
+  storm:["Wind all night. Something has come down somewhere.","A proper storm. Two of the fences will need looking at."],
+  heat :["Hot before eight. The ground is already cracking.","No air at all. Water twice if you can face it."],
+  frost:["White over everything, and hard underfoot.","Frost. Whatever was tender is not tender any more."],
+};
+function rollWeather(){
+  const s=season().id;
+  const opts=Object.keys(WEATHER);
+  let total=0;const weights=opts.map(k=>{const w=WEATHER[k].chance[s]||0;total+=w;return w;});
+  let r=Math.random()*total;
+  for(let i=0;i<opts.length;i++){r-=weights[i];if(r<=0)return opts[i];}
+  return 'fair';
+}
+function weatherNow(){return WEATHER[S.weather]||WEATHER.fair;}
+function applyWeather(){
+  const w=weatherNow();
+  const lines=[];
+  if(w.water===1){
+    let n=0;
+    Object.keys(S.farm||{}).forEach(k=>{const p=S.farm[k];if(p&&p.till&&!p.wet){p.wet=true;n++;}});
+    if(n)lines.push('The rain watered '+n+' row'+(n===1?'':'s')+' for you.');
+  }
+  if(w.water===-1){
+    let n=0;
+    Object.keys(S.farm||{}).forEach(k=>{const p=S.farm[k];if(p&&p.wet){p.wet=false;n++;}});
+    if(n)lines.push('The heat took the water out of '+n+' row'+(n===1?'':'s')+'.');
+  }
+  if(S.weather==='frost'){
+    let lost=0;
+    Object.keys(S.farm||{}).forEach(k=>{
+      const p=S.farm[k];
+      if(p&&p.crop){
+        const c=CROPS[p.crop];
+        if(c&&c.seasons.indexOf('winter')<0&&Math.random()<0.22){p.crop=null;p.stage=0;lost++;}
+      }
+    });
+    if(lost)lines.push('The frost took '+lost+' plant'+(lost===1?'':'s')+'. It happens.');
+  }
+  if(S.weather==='storm'){
+    /* the storm knocks something loose, and leaves something behind */
+    if(Math.random()<0.6){bagAdd('Wood',2);lines.push('A branch is down across the path. That is two loads of wood.');}
+  }
+  return lines;
+}
+function drawWeather(){
+  const w=S.weather;
+  if(!w||w==='fair')return;
+  const t=Date.now()/1000;
+  if(w==='rain'||w==='storm'){
+    const n=(w==='storm')?190:110;
+    ctx.strokeStyle=(w==='storm')?'rgba(180,200,220,0.42)':'rgba(180,200,220,0.30)';
+    ctx.lineWidth=1;
+    for(let i=0;i<n;i++){
+      const x=((i*137)+(t*(w==='storm'?900:520)))%(cw+80)-40;
+      const y=((i*211)+(t*(w==='storm'?1400:900)))%(ch+60)-30;
+      const len=(w==='storm')?14:9;
+      const lean=(w==='storm')?7:3;
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-lean,y+len);ctx.stroke();
+    }
+    ctx.fillStyle=(w==='storm')?'rgba(20,26,34,0.30)':'rgba(30,40,50,0.16)';
+    ctx.fillRect(0,0,cw,ch);
+    if(w==='storm'&&Math.random()<0.006){
+      ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fillRect(0,0,cw,ch);
+    }
+  }else if(w==='frost'){
+    ctx.fillStyle='rgba(200,220,235,0.14)';ctx.fillRect(0,0,cw,ch);
+    for(let i=0;i<70;i++){
+      const x=((i*173)+(t*22))%(cw+40)-20;
+      const y=((i*97)+(t*40))%(ch+40)-20;
+      ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillRect(x,y,2,2);
+    }
+  }else if(w==='heat'){
+    const g=ctx.createLinearGradient(0,0,0,ch);
+    g.addColorStop(0,'rgba(255,200,120,0.10)');
+    g.addColorStop(1,'rgba(255,170,90,0.04)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,cw,ch);
+  }else if(w==='cloud'){
+    ctx.fillStyle='rgba(40,44,50,0.12)';ctx.fillRect(0,0,cw,ch);
+  }
+}
+
+/* ============================================================
+   TABLE TALK — they say things while you play.
+   ============================================================ */
+const TALK_WIN=[
+ "{who} says nothing, which from {who} is a whole sentence.",
+ "\u201cRight,\u201d says {who}. \u201cRight. Fine.\u201d",
+ "{who} looks at their hand, then at yours, then at their hand again.",
+ "\u201cI had that,\u201d {who} says, of a thing they did not have.",
+ "{who} laughs once, entirely without joy.",
+ "\u201cWho taught you that?\u201d asks {who}, suspicious.",
+];
+const TALK_LOSE=[
+ "\u201cThat is the one,\u201d says {who}, pleased with themselves.",
+ "{who} tries very hard not to look smug and does not manage it.",
+ "\u201cDon\u2019t take it hard,\u201d says {who}, taking it very well indeed.",
+ "{who} hums something. It is not helping.",
+ "\u201cAgain?\u201d says {who}, already dealing.",
+];
+const TALK_IDLE=[
+ "\u201cThe rows want rain,\u201d says {who}, to nobody.",
+ "{who} mentions the fence by the orchard. Again.",
+ "\u201cYou hear about the noise from the deep?\u201d {who} asks, and does not wait for an answer.",
+ "{who} tells a story you have heard. It is longer this time.",
+ "\u201cMy grandmother played this,\u201d says {who}. \u201cShe cheated.\u201d",
+ "{who} shuffles badly and pretends it was deliberate.",
+ "\u201cCold in here,\u201d says {who}, who is closest to the fire.",
+ "{who} asks after your crops with what sounds like real interest.",
+ "\u201cOne more and then I really am going,\u201d says {who}, for the third time.",
+ "{who} eats something they brought and does not offer any round.",
+ "\u201cThey say the winter is coming early.\u201d {who} says this every year.",
+ "{who} counts their cards twice and looks no happier the second time.",
+ "\u201cI have not played this since I was small,\u201d says {who}, playing it very well.",
+ "{who} taps the table in a rhythm that is going to become annoying.",
+ "\u201cDid you hear Jessica has the mill going again?\u201d",
+ "{who} watches you think and says nothing, which is worse.",
+];
+const TALK_CLOSE=[
+ "\u201cThis is a good one,\u201d says {who}, meaning the game, probably.",
+ "{who} sits forward. That is not a good sign for you.",
+ "\u201cCareful now,\u201d says {who}, and means it.",
+ "{who} has stopped talking, which is how you know it matters.",
+];
+function tableSay(kind,who){
+  const pool=({win:TALK_WIN,lose:TALK_LOSE,close:TALK_CLOSE})[kind]||TALK_IDLE;
+  return freshLine(pool,{who});
+}
+function chatBox(name,line){
+  if(!line)return '';
+  return '<div class="card" style="margin:8px 0;display:flex;gap:8px;align-items:flex-start;">'
+    +'<canvas class="talkface" width="28" height="28" style="width:26px;height:26px;image-rendering:pixelated;flex:0 0 auto;"></canvas>'
+    +'<div class="hint" style="font-style:italic;">'+esc(line)+'</div></div>';
+}
+function paintTalkFace(id){
+  const f=FOLK.find(x=>x.id===id);if(!f)return;
+  document.querySelectorAll('.talkface').forEach(c=>{
+    const g=c.getContext('2d');g.imageSmoothingEnabled=false;
+    try{
+      const sp=personSprite(f.pal,1,0);
+      g.drawImage(sp,4,2,24,24,0,0,28,28);
+    }catch(e){}
+  });
+}
+
+/* ============================================================
+   THE YEAR — days that mean something.
+   ============================================================ */
+const FESTIVALS=[
+  {id:'sowing', day:4,  season:'spring', n:'The Sowing',
+   t:'Everyone puts something in the ground on the same morning. It is not efficient. That is not the point.',
+   ask:{item:'seeds', n:3}, gift:['Bread','Cheese'],
+   line:'Half the valley is out in the rows before the light is properly up.'},
+  {id:'longday',day:11, season:'summer', n:'The Long Day',
+   t:'The table goes out at noon and does not come back in until somebody carries it.',
+   ask:{item:'Berries', n:5}, gift:['Stew','Butter'],
+   line:'The long table is out in the middle of the green, and it is already covered.'},
+  {id:'catch',  day:7,  season:'summer', n:'The Catch',
+   t:'Everybody fishes. Whoever brings the most feeds the rest of us.',
+   contest:'fish', gift:['Rope','Cloth'],
+   line:'There is nobody in the village. They are all stood along the river.'},
+  {id:'harvest',day:12, season:'autumn', n:'Harvest Home',
+   t:'The board comes down. Nothing is asked of anybody for one day.',
+   ask:{item:'crops', n:8}, gift:['Cheese','Yarn','Remedy'],
+   line:'Every door is open and there is more food than anyone can account for.'},
+  {id:'lantern',day:6,  season:'winter', n:'The Lantern Night',
+   t:'The shortest evening, and every window lit against it.',
+   ask:{item:'Wood', n:6}, gift:['Salve','Bread'],
+   line:'Lanterns in every window, and the snow taking the colour of them.'},
+];
+function festivalToday(){
+  const s=season();
+  const d=((S.day-1)%SEASON_DAYS)+1;
+  return FESTIVALS.find(f=>f.season===s.id&&f.day===d)||null;
+}
+function festivalSoon(){
+  const s=season();
+  const d=((S.day-1)%SEASON_DAYS)+1;
+  const f=FESTIVALS.find(x=>x.season===s.id&&x.day>d);
+  return f?{f,inDays:f.day-d}:null;
+}
+function openFestival(){
+  const f=festivalToday();
+  if(!f)return false;
+  S.festDone=S.festDone||{};
+  const key2=f.id+'-'+Math.floor((S.day-1)/56);
+  const done=S.festDone[key2];
+  paused=true;
+  let body='';
+  if(f.contest==='fish'){
+    const caught=(S.festCatch&&S.festCatch[key2])||0;
+    body='<div class="row"><div style="min-width:0;"><strong>The count so far</strong>'
+      +'<div class="hint">You have landed '+caught+' today. Kayla has '+(3+Math.floor(Math.random()*4))+'.</div></div></div>'
+      +(caught>=6&&!done
+        ?'<div class="acts"><button class="primary" id="claimB">Take the day</button></div>'
+        :'<div class="hint" style="margin-top:8px;">Six will do it. Get down to the jetty.</div>');
+  }else if(!done){
+    const want=f.ask;
+    let have=0;
+    if(want.item==='seeds')have=(S.bag||[]).filter(b=>SEED_OF[b.item]).reduce((a,b)=>a+b.n,0);
+    else if(want.item==='crops')have=(S.bag||[]).filter(b=>Object.values(CROPS).some(c=>c.name===b.item)).reduce((a,b)=>a+b.n,0);
+    else have=bagCount(want.item);
+    body='<div class="row"><div style="min-width:0;"><strong>What is wanted</strong>'
+      +'<div class="hint">'+want.n+' '+(want.item==='seeds'?'seed packets':(want.item==='crops'?'of anything you have grown':want.item))+'</div>'
+      +'<div class="hint" style="color:'+(have>=want.n?'var(--green)':'var(--rose)')+'">you have '+have+'</div></div>'
+      +'<button '+(have>=want.n?'class="primary" ':'disabled ')+'id="giveB">Bring it</button></div>';
+  }else{
+    body='<div class="hint">You have done your part. Go and enjoy it.</div>';
+  }
+  OR('<h3>'+f.n+'</h3>'
+    +'<div class="hint" style="margin-bottom:6px;">'+f.t+'</div>'
+    +'<div class="hint" style="margin-bottom:10px;font-style:italic;">'+f.line+'</div>'
+    +body
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  const g=document.getElementById('giveB');
+  if(g)g.onclick=async()=>{
+    const want=f.ask;
+    let left=want.n;
+    if(want.item==='seeds'){
+      (S.bag||[]).slice().forEach(b=>{if(left>0&&SEED_OF[b.item]){const t=Math.min(left,b.n);bagTake(b.item,t);left-=t;}});
+    }else if(want.item==='crops'){
+      (S.bag||[]).slice().forEach(b=>{if(left>0&&Object.values(CROPS).some(c=>c.name===b.item)){const t=Math.min(left,b.n);bagTake(b.item,t);left-=t;}});
+    }else bagTake(want.item,want.n);
+    S.festDone[key2]=true;
+    S.standing+=5;
+    (f.gift||[]).forEach(it=>bagAdd(it,2));
+    SFX.win();await save();
+    toast('Given. The table is fuller for it — and so is your basket.');
+    openFestival();
+  };
+  const c=document.getElementById('claimB');
+  if(c)c.onclick=async()=>{
+    S.festDone[key2]=true;S.standing+=6;
+    (f.gift||[]).forEach(it=>bagAdd(it,2));
+    SFX.win();await save();
+    toast('You took the day. Somebody will mention it for a year.');
+    openFestival();
+  };
+  document.getElementById('closeB').onclick=close;
+  return true;
+}
+/* ---- what your standing changes about the place ---- */
+const STANDING_MARKS=[
+  {at:10,  n:'A path worn to your door',   t:'People come by often enough that the grass has given up.'},
+  {at:25,  n:'A seat kept at the table',   t:'Nobody says so. It is simply always free.'},
+  {at:45,  n:'Your name on the board',     t:'Requests start being addressed to you by name.'},
+  {at:70,  n:'A key you were never given', t:'Doors that were shut are not shut any more.'},
+  {at:100, n:'They ask what you think',    t:'When the valley cannot decide, somebody says: ask them.'},
+  {at:150, n:'One of the old names',       t:'Children who were not born when you arrived assume you always were.'},
+];
+function standingMarks(){
+  return STANDING_MARKS.filter(m=>S.standing>=m.at);
+}
+function nextMark(){
+  return STANDING_MARKS.find(m=>S.standing<m.at)||null;
+}
+function openStanding(){
+  paused=true;
+  const have=standingMarks();
+  const nxt=nextMark();
+  OR('<h3>How you stand</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Nothing is counted here. This is only what people have noticed.</div>'
+    +'<div class="row"><div><strong>'+S.standing+'</strong> <span class="hint">shown up</span></div></div>'
+    +(have.length?('<h3 style="font-size:14px;margin:14px 0 6px;">What has changed</h3>'
+      +have.map(m=>'<div class="row"><div style="min-width:0;"><strong>'+m.n+'</strong>'
+        +'<div class="hint">'+m.t+'</div></div></div>').join(''))
+      :'<div class="hint" style="margin-top:12px;">Early days yet.</div>')
+    +(nxt?('<div class="hint" style="margin-top:12px;">'+(nxt.at-S.standing)+' more before anything else shifts.</div>'):'')
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.getElementById('closeB').onclick=close;
 }
 /* ================= BLUEPRINTS ================= */
 const PLANS=[
@@ -6470,7 +6982,19 @@ function openMenu(){
   paused=true;
   OR('<h3>Menu</h3>'
     +'<p class="sub">Greenhollow saves itself on this device after everything you do. Close it and come back whenever.</p>'
-    +'<div class="card"><strong>Standing</strong><div class="hint">'+standingWord()+'</div></div>'
+    +'<div class="row"><div style="min-width:0;"><strong>Standing</strong>'
+      +'<div class="hint">'+standingWord()+'</div>'
+      +(nextMark()?('<div class="hint">Next: '+esc(nextMark().n)+'</div>'):'')
+      +'</div><button id="standB">Look</button></div>'
+    +(festivalToday()
+      ?('<div class="row"><div style="min-width:0;"><strong>'+esc(festivalToday().n)+'</strong>'
+        +'<div class="hint">Today. Everybody is out for it.</div></div>'
+        +'<button class="primary" id="festB">Go</button></div>')
+      :(festivalSoon()
+        ?('<div class="card"><strong>'+esc(festivalSoon().f.n)+'</strong>'
+          +'<div class="hint">In '+festivalSoon().inDays+' day'+(festivalSoon().inDays===1?'':'s')+'. '+esc(festivalSoon().f.t)+'</div></div>')
+        :''))
+    +'<div class="card"><strong>Weather</strong><div class="hint">'+weatherNow().n+' — '+weatherNow().t+'</div></div>'
     +'<div class="card"><strong>How this works</strong><div class="hint">Nothing in this valley is bought or sold. Seed is given, tools are mended, and what you grow beyond your own needs goes on the table or against the board. Standing is not a score — it is people remembering that you turned up.</div></div>'
     +'<div class="card"><strong>Friends</strong><div class="hint">'
     +(NET.ready()?('Sharing the valley <strong>'+esc(NET.code)+'</strong> with '+(NET.others().length)+' other'+(NET.others().length===1?'':'s')+'.')
@@ -6490,6 +7014,8 @@ function openMenu(){
     if(this.dataset.c){const nm=S.player;S=newGame();S.player=nm;await save();close();openIntro();}
     else{this.dataset.c='1';this.innerText='Tap again — this clears the farm';}
   };
+  const sb=document.getElementById('standB');if(sb)sb.onclick=openStanding;
+  const fb=document.getElementById('festB');if(fb)fb.onclick=()=>openFestival();
   document.getElementById('closeB').onclick=close;
 }
 
@@ -6523,6 +7049,10 @@ async function doSleep(){
     p.wet=false;
   });
   S.day++;S.min=DAY_START;S.stam=STAMINA;
+  S.weather=rollWeather();
+  const wLines=applyWeather();
+  const fest=festivalToday();
+  if(fest)wLines.unshift(fest.n+'. '+fest.line);
   buildCollision();                    /* what regrew overnight is solid again */
   checkGifts();
   const stock=morningStock();
@@ -6552,6 +7082,14 @@ function toast(m){
 }
 function fmt(){const h=Math.floor(S.min/60)%24,m=Math.floor(S.min%60);return h+':'+(m<10?'0':'')+m;}
 function updateHud(){
+  {
+    const w=document.getElementById('wx');
+    if(w&&typeof weatherNow==='function'){
+      const icon={fair:'\u2600',cloud:'\u2601',rain:'\u2614',storm:'\u26A1',heat:'\u2600',frost:'\u2744'}[S.weather]||'';
+      w.innerText=icon+' '+weatherNow().n;
+      w.title=weatherNow().t;
+    }
+  }
   document.getElementById('dayTag').innerText=season().name.toUpperCase()+' '+seasonDay()+' · '+fmt()+' · yr '+yearOf();
   let p='';for(let i=0;i<STAMINA;i+=2)p+='<span class="pip '+(i<S.stam?'':'out')+'"></span>';
   document.getElementById('stamTag').innerHTML='ENERGY '+p;
