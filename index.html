@@ -161,6 +161,7 @@ const TILE=32, MW=120, MH=96, KEY='greenhollow-v4';
 const DAY_START=6*60, DAY_END=24*60, MIN_PER_SEC=1/0.55;
 const BAG_SLOTS=24;
 const STAMINA=24;
+function stamCap(){return (S&&S.stamMax)||STAMINA;}
 const storageShim={
   async get(k){const v=localStorage.getItem(k);return v==null?null:{key:k,value:v};},
   async set(k,v){localStorage.setItem(k,v);return{key:k,value:v};}
@@ -415,7 +416,7 @@ function srand(seed){const x=Math.sin(seed)*10000;return x-Math.floor(x);}
 
 function newGame(){
   const folk={};FOLK.forEach(f=>{folk[f.id]={friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};});
-  return {day:1,min:DAY_START,stam:STAMINA,runId:Date.now(),
+  return {day:1,min:DAY_START,stam:STAMINA,stamMax:STAMINA,runId:Date.now(),
     player:{name:'',skin:'#E8C49B',hair:'#6B4226',hairStyle:'short',top:'#4E8B8B'},
     jobs:{jess:'miller',justin:'baker',sana:'smith',kayla:'weaver',patrick:'woodsman',
           andrew:'carpenter',zak:'teacher',jason:'warden',rachel:'healer',heather:'ground',
@@ -443,7 +444,7 @@ async function load(){
       if(S.inside===undefined)S.inside=null;
       S.myStuff=S.myStuff||{};S.room=S.room||'main';S.carrying=S.carrying||null;
       S.gear=S.gear||{};S.said=S.said||[];S.weather=S.weather||'fair';
-      S.relics=S.relics||[];S.worn=S.worn||{};
+      S.relics=S.relics||[];S.worn=S.worn||{};S.stamMax=S.stamMax||STAMINA;
       S.festDone=S.festDone||{};S.festCatch=S.festCatch||{};
       S.deck=S.deck||starterDeck();
       S.cards=null;S.bones=null;S.stones=null;S.match=null;
@@ -2823,12 +2824,12 @@ function openEat(){
       +'<button class="primary" data-eat="'+esc(b.item)+'">Eat</button></div>').join('')
     ||'<div class="hint">Nothing worth eating. The kitchen turns crops into suppers.</div>';
   OR('<h3>Something to eat</h3>'
-    +'<div class="hint" style="margin-bottom:10px;">You have '+S.stam+' of '+STAMINA+'.</div>'+rows
+    +'<div class="hint" style="margin-bottom:10px;">You have '+S.stam+' of '+stamCap()+'.</div>'+rows
     +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
   document.querySelectorAll('[data-eat]').forEach(b=>b.onclick=async()=>{
     const it=b.dataset.eat;
     if(!bagTake(it,1))return;
-    S.stam=Math.min(STAMINA,S.stam+EATS[it]);SFX.eat();
+    S.stam=Math.min(stamCap(),S.stam+EATS[it]);SFX.eat();
     await save();updateHud();toast(it+' — that helps.');openEat();
   });
   document.getElementById('closeB').onclick=close;
@@ -5646,11 +5647,12 @@ function roomH(){
 function atticFor(id){
   const fam=(typeof cottageFamily==='function')?cottageFamily(id):'';
   const boarded=hasWork(id,'loft');
-  return {name:(id==='home'?'Your loft':(fam?fam+"'s loft":'A loft')),
+  return {name:((typeof myHomeId==='function'&&myHomeId()===id)?'Your loft':(fam?fam+(/s$/i.test(fam)?"' loft":"'s loft"):'A loft')),
     floor:boarded?'#5A4A38':'#43382C',floorB:boarded?'#52432F':'#3C3227',
     wall:'#3A3028',
     stations:boarded
-      ?[{k:'bed',x:3,y:2,label:'A bed under the rafters',act:(id==='home')?'sleep':null},
+      ?[{k:'bed',x:3,y:2,label:'A bed under the rafters',
+         act:((typeof myHomeId==='function'&&myHomeId()===id))?'sleep':null},
         {k:'table',x:9,y:2,label:'A desk',act:null}]
       :[],
     props:boarded?[[12,4,'crate'],[6,5,'rug'],[7,1,'hangherb']]
@@ -5703,9 +5705,7 @@ const MAKEABLE=[
   {t:'bucket',   name:'Bucket',       cost:{Iron:1},         note:'A bucket.'},
 ];
 function canDecorate(){
-  if(S.inside==='home')return true;
-  const me=(typeof meFolk==='function')&&meFolk();
-  return !!(me&&S.inside===homeOf(me));
+  return !!S.inside&&S.inside===myHomeId();
 }
 function openFurnish(){
   paused=true;
@@ -5794,7 +5794,7 @@ const INSIDE={
     stations:[{k:'shelf',x:3,y:2,label:'The shelves',act:'supply'},
               {k:'plans',x:8,y:2,label:'The plans',  act:'supply'}],
     props:[[12,2,'shelfjars'],[5,5,'crate'],[10,5,'sackpile'],[1,4,'barrel'],[13,5,'crate'],[6,1,'hangpots']]},
-  home     :{name:'Your cottage',floor:'#584838',floorB:'#503F31',wall:'#4E3E30',
+  home     :{name:'The empty cottage',floor:'#584838',floorB:'#503F31',wall:'#4E3E30',
     stations:[{k:'bed',  x:11,y:2,label:'Your bed',   act:'sleep'},
               {k:'table',x:5,y:4,label:'The table',   act:'bag'},
               {k:'hearth',x:2,y:1,label:'The hearth', act:'eat'}],
@@ -5807,15 +5807,16 @@ const INSIDE={
 /* homes are two rooms: the main room, and a bedroom through the back door */
 function roomKey(){return S.inside+(S.room&&S.room!=='main'?(':'+S.room):'');}
 function bedroomFor(id){
+  const mine=(typeof myHomeId==='function')&&myHomeId()===id;
   const fam=(typeof cottageFamily==='function')?cottageFamily(id):'';
   const kids=FOLK.filter(f=>homeOf(f)===id&&f.child).length;
-  const beds=[{k:'bed',x:2,y:2,label:'A bed',act:(id==='home')?'sleep':null}];
+  const beds=[{k:'bed',x:2,y:2,label:mine?'Your bed':'A bed',act:mine?'sleep':null}];
   if(kids>0)beds.push({k:'bed',x:6,y:2,label:"The children's bed",act:null});
   if(kids>2)beds.push({k:'bed',x:10,y:2,label:'Another bed',act:null});
   if(kids>4)beds.push({k:'bed',x:6,y:5,label:'And another',act:null});
   const props=[[12,5,'dresser'],[1,5,'crate'],[9,5,'chair']];
   if(kids>0)props.push([4,5,'rug']);
-  return {name:(id==='home'?'Your bedroom':(fam?fam+"'s bedroom":'A bedroom')),
+  return {name:mine?'Your bedroom':(fam?fam+(/s$/i.test(fam)?"' bedroom":"'s bedroom"):'A bedroom'),
     floor:'#4E4034',floorB:'#463A2E',wall:'#3E332A',
     stations:beds.concat([{k:'table',x:12,y:2,label:'A washstand',act:null}]),
     props,back:true};
@@ -5826,14 +5827,15 @@ function insideSpec(id){
   if(S.room==='bed')return bedroomFor(id);
   if(INSIDE[id])return INSIDE[id];
   if(id&&id.startsWith('c')){
+    const mine=(typeof myHomeId==='function')&&myHomeId()===id;
     const fam=(typeof cottageFamily==='function')?cottageFamily(id):'';
     const kids=FOLK.filter(f=>homeOf(f)===id&&f.child).length;
-    const beds=[{k:'bed',x:11,y:2,label:'A bed',act:null}];
+    const beds=[{k:'bed',x:11,y:2,label:mine?'Your bed':'A bed',act:mine?'sleep':null}];
     if(kids>0)beds.push({k:'bed',x:2,y:2,label:"The children's bed",act:null});
     if(kids>2)beds.push({k:'bed',x:6,y:1,label:'Another bed',act:null});
     const props=[[8,4,'chair'],[13,5,'crate'],[1,5,'bucket'],[9,1,'hangpots'],[5,5,'rug']];
     if(kids>0)props.push([4,4,'dresser']);
-    return {name:fam?(fam+"'s cottage"):'A cottage',
+    return {name:mine?'Your cottage':(fam?(fam+(/s$/i.test(fam)?"' cottage":"'s cottage")):'A cottage'),
       floor:'#54463A',floorB:'#4C3F34',wall:'#463A30',
       stations:beds.concat([{k:'table',x:5,y:4,label:'A table',act:null},
                             {k:'hearth',x:2,y:5,label:'The hearth',act:null}]),
@@ -5841,6 +5843,16 @@ function insideSpec(id){
   }
   return null;
 }
+/* the one house that is yours. claiming somebody moves you into their cottage. */
+function myHomeId(){
+  const me=meFolk();
+  if(me){
+    const h=homeOf(me);
+    if(h&&BLD[h])return h;
+  }
+  return 'home';
+}
+function isMyHome(id){return id===myHomeId();}
 function isHome(id){return id==='home'||(id&&id.charAt(0)==='c'&&BLD[id]&&BLD[id].cot);}
 function enterInside(id){
   S.room='main';
@@ -7175,6 +7187,67 @@ function openStanding(){
     +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
   document.getElementById('closeB').onclick=close;
 }
+
+/* ============================================================
+   NIGHT FALLING — the screen goes down, and comes back up.
+   ============================================================ */
+let nightFade=0;         /* 0 = clear, 1 = fully dark */
+let nightDir=0;          /* -1 fading in, +1 fading out */
+let nightWord='';
+function fadeOut(word){
+  return new Promise(res=>{
+    nightWord=word||'';
+    nightDir=1;
+    const check=()=>{
+      if(nightFade>=1){nightDir=0;res();return;}
+      requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+    /* if frames are not running for any reason, do not hang forever */
+    setTimeout(()=>{if(nightDir===1){nightFade=1;nightDir=0;res();}},1400);
+  });
+}
+function fadeIn(){
+  nightDir=-1;
+  setTimeout(()=>{if(nightDir===-1){nightFade=0;nightDir=0;nightWord='';}},1600);
+}
+function stepFade(dt){
+  if(nightDir>0)nightFade=Math.min(1,nightFade+dt*1.7);
+  else if(nightDir<0){
+    nightFade=Math.max(0,nightFade-dt*1.1);
+    if(nightFade<=0){nightDir=0;nightWord='';}
+  }
+}
+function drawFade(){
+  if(nightFade<=0)return;
+  resetView();
+  ctx.fillStyle='rgba(6,9,8,'+nightFade+')';
+  ctx.fillRect(0,0,cw,ch);
+  if(nightWord&&nightFade>0.55){
+    const a=(nightFade-0.55)/0.45;
+    ctx.textAlign='center';
+    ctx.fillStyle='rgba(237,230,214,'+(a*0.9)+')';
+    ctx.font='17px Fraunces, serif';
+    ctx.fillText(nightWord,cw/2,ch/2);
+    /* a few stars while it is dark */
+    for(let i=0;i<26;i++){
+      const x=((i*167)%cw), y=((i*97)%(ch*0.6))+20;
+      const tw=0.3+0.4*Math.sin(Date.now()/700+i);
+      ctx.fillStyle='rgba(237,230,214,'+(a*tw*0.5)+')';
+      ctx.fillRect(x,y,2,2);
+    }
+  }
+}
+const NIGHT_WORDS=[
+  'The lamps go out one by one.',
+  'The valley settles.',
+  'Somewhere a door closes for the night.',
+  'The fire burns down to nothing much.',
+  'Owls, and then not even owls.',
+  'The last window goes dark.',
+  'You are asleep before you have finished thinking about it.',
+  'The night does what nights do.',
+];
 /* ================= BLUEPRINTS ================= */
 const PLANS=[
   {id:'coop',   name:'Chicken coop',  cost:{Wood:20,Fibre:8},          w:4,h:3,
@@ -7349,8 +7422,10 @@ function openTable(){
   /* if somebody is sat here, they will play you */
   const here=FOLK.filter(f=>{
     if(isMe(f)||f.child)return false;
+    if(typeof isIndoorsNow==='function'&&isIndoorsNow(f))return false;  /* they are at work indoors */
+    if(typeof indoors==='function'&&indoors(f))return false;            /* or in bed */
     const p=folkPos(f);
-    return Math.abs(p.x-TABLE.x)<=3&&Math.abs(p.y-TABLE.y)<=3;
+    return p&&Math.abs(p.x-TABLE.x)<=3&&Math.abs(p.y-TABLE.y)<=3;
   });
   S.tableMates=here.map(f=>f.id);
   return openTableInner();
@@ -7389,6 +7464,7 @@ function openTableInner(){
              +'<button data-game="'+id+'">Games</button></div>';}).join(''))
       : '<div class="hint" style="margin-top:12px;">Nobody about to play just now. They gather here of an evening.</div>')
       +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-game]').forEach(b=>b.onclick=()=>openGames(b.dataset.game));
   document.querySelectorAll('[data-give]').forEach(b=>{b.onclick=async()=>{
     const it=mine[parseInt(b.dataset.give)];
     if(!bagTake(it.item,1))return;
@@ -7696,7 +7772,7 @@ function openMenu(){
 }
 
 /* ================= DAY ================= */
-async function morningYield(){
+function morningYield(){
   const out=[];
   (S.built||[]).forEach(b=>{
     if(b.id==='coop'){bagAdd('Egg',2+(hashStr('e'+S.day)%2));out.push('eggs');}
@@ -7716,7 +7792,35 @@ async function checkGifts(){
   await save();
 }
 async function doSleep(){
+  try{ await doSleepInner(); }
+  catch(e){
+    console.error('sleep stumbled:',e);
+    /* whatever went wrong, you still wake up */
+    S.min=DAY_START;S.stam=STAMINA;
+    nightFade=0;paused=true;
+    OR('<h3>Day '+S.day+'</h3>'
+      +'<p class="sub">You sleep. The valley gets on with things while you do.</p>'
+      +'<div class="acts"><button class="primary" id="closeB">Out into it</button></div>');
+    const c=document.getElementById('closeB');if(c)c.onclick=close;
+  }
+}
+async function doSleepInner(){
+  /* a night in your own bed, under your own roof, is worth more */
+  const hid=myHomeId();
+  const inBed=!!(S.inside&&S.inside===hid);
+  let comfort=0;
+  if(inBed){
+    comfort=3;
+    if(hasWork(hid,'loft'))comfort+=1;
+    if(hasWork(hid,'widen')||hasWork(hid,'deepen'))comfort+=1;
+    const mine=(S.myStuff&&S.myStuff[hid])||[];
+    if(mine.length>=3)comfort+=1;
+  }
+  S.sleptWell=inBed;
   SFX.sleep();
+  close();                              /* let the screen be seen while it fades */
+  paused=false;
+  await fadeOut(NIGHT_WORDS[Math.floor(Math.random()*NIGHT_WORDS.length)]);
   paused=true;
   const grew=[];
   Object.keys(S.farm).forEach(k=>{
@@ -7724,7 +7828,10 @@ async function doSleep(){
     if(p.crop&&p.wet){p.stage=(p.stage||0)+1;if(ripe(p))grew.push(CROPS[p.crop].name);}
     p.wet=false;
   });
-  S.day++;S.min=DAY_START;S.stam=STAMINA;
+  S.day++;S.min=DAY_START;
+  /* your own bed sends you out with more in the tank */
+  const rested=STAMINA+comfort;
+  S.stam=rested;S.stamMax=rested;
   S.weather=rollWeather();
   const wLines=applyWeather();
   const fest=festivalToday();
@@ -7737,9 +7844,19 @@ async function doSleep(){
   if(got.length)setTimeout(()=>toast('Morning — '+got.join(' and ')+' collected'),1200);S.cans=Math.max(S.cans,0);
   S.needs=[];S.needsDay=0;
   await save();updateHud();drawToolbar();
+  fadeIn();
   const ripeN=Object.values(S.farm).filter(p=>ripe(p)).length;
+  const wx=(typeof weatherNow==='function')?weatherNow():null;
   OR('<h3>Day '+S.day+'</h3>'
-    +'<p class="sub">You sleep well. The valley gets on with things while you do.</p>'
+    +'<p class="sub">'+(inBed
+      ? 'Your own bed, your own roof. You wake up better for it.'
+      : 'You sleep where you fall. It does the job, but only just.')+'</p>'
+    +(inBed?'<div class="card"><strong>Well rested</strong><div class="hint">'
+      +'+'+(rested-STAMINA)+' vigour today for sleeping at home.</div></div>':'')
+    +(wx?('<div class="card"><strong>'+esc(wx.n)+'</strong><div class="hint">'+esc(wx.t)+'</div></div>'):'')
+    +((wLines&&wLines.length)?wLines.map(l=>'<div class="hint">\u00b7 '+esc(l)+'</div>').join(''):'')
+    +((got&&got.length)?('<div class="card"><strong>Brought in overnight</strong>'
+        +'<div class="hint">'+esc(got.join(', '))+'</div></div>'):'')
     +(ripeN?('<div class="card"><strong>Ready to gather</strong><div class="hint">'+ripeN+' plant'+(ripeN===1?'':'s')+' have come on.</div></div>'):'')
     +'<div class="card"><strong>The board</strong><div class="hint">Hollis will have written up what is wanted today.</div></div>'
     +'<div class="acts"><button class="primary" id="closeB">Out into it</button></div>');
@@ -7771,7 +7888,7 @@ function updateHud(){
     }
   }
   document.getElementById('dayTag').innerText=season().name.toUpperCase()+' '+seasonDay()+' · '+fmt()+' · yr '+yearOf();
-  let p='';for(let i=0;i<STAMINA;i+=2)p+='<span class="pip '+(i<S.stam?'':'out')+'"></span>';
+  let p='';for(let i=0;i<stamCap();i+=2)p+='<span class="pip '+(i<S.stam?'':'out')+'"></span>';
   document.getElementById('stamTag').innerHTML='ENERGY '+p;
   document.getElementById('bagBtn').innerText='Basket'+(S.bag.length?(' ('+S.bag.length+')'):'');
 }
@@ -7836,6 +7953,10 @@ function fitControls(){
 let stuckFor=0;
 function loopBody(ts){
   fitControls();
+  {
+    const fdt=Math.min(0.05,(ts-(loopBody._t||ts))/1000);loopBody._t=ts;
+    stepFade(fdt);
+  }
   /* a fight owns the screen wherever it started */
   if(S.battle&&!menuOpen()){
     const bdt=Math.min(0.05,(ts-last)/1000);last=ts;
@@ -7852,12 +7973,12 @@ function loopBody(ts){
   /* the scenes run on their own — a menu being open must not freeze them */
   if(!menuOpen()){
     if(S.scene==='fishing'&&S.fish){
-          fishUpdate(dt);drawFish();
+          fishUpdate(dt);drawFish();drawFade();drawFade();
           const hf=document.getElementById('hint');if(hf&&hf.dataset.t!=='1')hf.style.display='none';
           return;
         }
     if(S.scene==='hunting'&&S.hunt){
-          huntUpdate(dt);drawHunt();
+          huntUpdate(dt);drawHunt();drawFade();drawFade();
           const hh2=document.getElementById('hint');if(hh2&&hh2.dataset.t!=='1')hh2.style.display='none';
           return;
         }
@@ -7905,14 +8026,14 @@ function loopBody(ts){
           }
           const mm2=Math.floor(S.min);
           if(mm2!==lastMin){lastMin=mm2;updateHud();}
-          drawInside();
+          drawInside();drawFade();drawFade();
           return;
         }
 
     if(S.scene==='deep'&&dgOn()){
           S.dg.swing=Math.max(0,S.dg.swing-dt);
           dgMove(dt);
-          drawDeep();
+          drawDeep();drawFade();
           const h2=document.getElementById('hint');if(h2&&h2.dataset.t!=='1')h2.style.display='none';
           return;
         }
@@ -7963,6 +8084,7 @@ function loopBody(ts){
     updateFolk(dt);
     draw();
   }
+  drawFade();
 }
 
 /* ================= INIT ================= */
