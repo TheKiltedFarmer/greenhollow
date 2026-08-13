@@ -423,6 +423,7 @@ function newGame(){
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
     delve:null, reports:[], stock:{}, inside:null, room:'main', ipx:0, ipy:0, gear:{}, said:[],
+    relics:[], worn:{},
     weather:'fair', festDone:{}, festCatch:{},
     deck:null, cards:null, bones:null, stones:null, match:null,
     fish:null, hunt:null, myStuff:{}, carrying:null, fish:null, hunt:null,
@@ -442,6 +443,7 @@ async function load(){
       if(S.inside===undefined)S.inside=null;
       S.myStuff=S.myStuff||{};S.room=S.room||'main';S.carrying=S.carrying||null;
       S.gear=S.gear||{};S.said=S.said||[];S.weather=S.weather||'fair';
+      S.relics=S.relics||[];S.worn=S.worn||{};
       S.festDone=S.festDone||{};S.festCatch=S.festCatch||{};
       S.deck=S.deck||starterDeck();
       S.cards=null;S.bones=null;S.stones=null;S.match=null;
@@ -2149,6 +2151,9 @@ window.addEventListener('keydown',e=>{
   if(!paused&&!S.inside&&!S.fish&&!S.hunt&&S.scene==='world'&&e.key.toLowerCase()==='g'){
     e.preventDefault();openGear();return;
   }
+  if(!paused&&!S.inside&&!S.fish&&!S.hunt&&!S.battle&&e.key.toLowerCase()==='k'){
+    e.preventDefault();openKitBag();return;
+  }
   if(!paused&&S.scene==='fishing'&&S.fish){
     const k=e.key.toLowerCase();
     if(k==='e'||k===' '||k==='enter'){e.preventDefault();if(!e.repeat)fishAct(true);return;}
@@ -2181,10 +2186,47 @@ window.addEventListener('keydown',e=>{
       e.preventDefault();
       const r=roomAt(S.dg.rx,S.dg.ry);
       const alive=r?r.foes.filter(f=>f.hp>0).length:0;
+      if(r&&r.hidden&&r.hidden.found&&!r.hidden.taken
+         &&Math.hypot(r.hidden.x-S.dg.px-16,r.hidden.y-S.dg.py-20)<40){
+        r.hidden.taken=true;SFX.chest();
+        const got=findRelic(S.dg.depth);
+        if(got){
+          toast('Behind the stone: '+got.relic.n+'. '+(got.worn?'You put it on.':'Stowed.'),5000);
+        }else{
+          for(let i=0;i<3;i++){const t2=depthLoot();S.dg.loot[t2.item]=(S.dg.loot[t2.item]||0)+t2.n;}
+          toast('Behind the stone: somebody\u2019s old cache. You take the lot.',4000);
+        }
+        save();return;
+      }
       if(r&&r.chest&&!r.chest.open&&Math.hypot(r.chest.x-S.dg.px-16,r.chest.y-S.dg.py-20)<40){
+        if(r.chest.locked){
+          const c=rollCheck('trap',12);
+          S.dg.lastCheck=dgCheckLine(c,12);
+          if(!c.pass){toast(c.who+' works at the lock and gets nowhere. ('+c.roll+')',3500);
+            r.chest.locked=Math.random()<0.5;save();return;}
+          toast(c.who+' has the lock open. ('+c.roll+')',3000);
+          r.chest.locked=false;
+        }
+        if(r.chest.trapped){
+          r.chest.trapped=false;
+          const c=rollCheck('trap',13);
+          const me4=S.dg.party.find(p=>p.you);
+          if(!c.pass){
+            me4.hp-=5;S.dg.hurt=0.4;SFX.hurt();
+            toast('The lid was wired. '+c.who+' takes it across the hands.',4000);
+            if(me4.hp<=0){me4.hp=0;me4.faints++;dgDown();}
+            save();return;
+          }
+          toast(c.who+' spots the wire and eases the lid up.',3500);
+        }
         r.chest.open=true;SFX.chest();
+        let gotRelic=null;
+        if(Math.random()<0.45)gotRelic=findRelic(S.dg.depth);
         for(let i=0;i<3;i++){const t=depthLoot();S.dg.loot[t.item]=(S.dg.loot[t.item]||0)+t.n;}
-        toast('The chest gives up what it has.');save();return;
+        toast(gotRelic
+          ? ('In the chest: '+gotRelic.relic.n+'. '+(gotRelic.worn?'You put it on.':'Stowed.'))
+          : 'The chest gives up what it has.',4500);
+        save();return;
       }
       if(!alive&&r&&r.kind==='boss'&&S.dg.bossDown){
         const cls=(S.dg.party.find(p=>p.you)||{}).cls;
@@ -2747,7 +2789,7 @@ function hintText(){
     if(n.type==='table')return festivalToday()?(festivalToday().n+'  (E)'):'The sharing table  (E)';
     if(n.type==='board')return 'The Commons Hall — go in  (E)';
     if(n.type==='supply')return 'The Supply House — go in  (E)';
-    if(n.type==='door')return 'A door in the hillside  (E)  ·  G for your kit';
+    if(n.type==='door')return 'A door in the hillside  (E)  ·  G for kit  ·  K for arms';
     if(n.type==='in')return 'Go inside  (E)';
     if(n.type==='fish')return 'Fish from the jetty  (E)';
     if(n.type==='hunt')return 'Wait in the hide  (E)  — 3 vigour';
@@ -3107,6 +3149,77 @@ const HEXES=[
  {id:'echo',  n:'The echo',       t:'Something repeats what you say, a beat late.'},
  {id:'cold',  n:'The cold hand',  t:'You cannot get warm.'},
 ];
+
+/* ============================================================
+   WHAT YOU BRING BACK — arms and armour, found not bought.
+   ============================================================ */
+const RELICS=[
+  {id:'blade1', slot:'arm', n:'A good blade',      atk:2, t:'Somebody kept this sharp for years.'},
+  {id:'blade2', slot:'arm', n:'The long knife',    atk:3, t:'Older than the valley. Still true.'},
+  {id:'blade3', slot:'arm', n:'Millstone iron',    atk:5, t:'Forged from something that used to grind.'},
+  {id:'bow1',   slot:'arm', n:'A horn bow',        atk:3, t:'Draws heavy. Worth it.'},
+  {id:'staff1', slot:'arm', n:'A thornwood staff', atk:4, t:'Hums when the dark gets close.'},
+  {id:'coat1',  slot:'body',n:'A quilted coat',    def:2, t:'Padding, and a great many patches.'},
+  {id:'coat2',  slot:'body',n:'Ringmail',          def:3, t:'Heavy. You will be glad of it.'},
+  {id:'coat3',  slot:'body',n:"The warden's plate",def:5, t:'It has been through worse than you.'},
+  {id:'charm2', slot:'trinket',n:'A river stone',  def:1, atk:1, t:'Warm, always, for no reason.'},
+  {id:'charm3', slot:'trinket',n:'A knot of hair', def:2, t:'Somebody loved somebody. It still holds.'},
+  {id:'charm4', slot:'trinket',n:'A tallow candle',atk:2, t:'Never burns down. Nobody asks why.'},
+];
+function relicById(id){return RELICS.find(r=>r.id===id);}
+function wornRelics(){
+  S.worn=S.worn||{};
+  return ['arm','body','trinket'].map(s=>relicById(S.worn[s])).filter(Boolean);
+}
+function relicAtk(){return wornRelics().reduce((a,r)=>a+(r.atk||0),0);}
+function relicDef(){return wornRelics().reduce((a,r)=>a+(r.def||0),0);}
+function foundRelics(){S.relics=S.relics||[];return S.relics.map(relicById).filter(Boolean);}
+function findRelic(depth){
+  S.relics=S.relics||[];
+  /* deeper levels give up better things */
+  const pool=RELICS.filter(r=>{
+    const power=(r.atk||0)+(r.def||0);
+    return power<=2+depth*1.5 && S.relics.indexOf(r.id)<0;
+  });
+  if(!pool.length)return null;
+  const got=pool[Math.floor(Math.random()*pool.length)];
+  S.relics.push(got.id);
+  /* wear it straight away if the slot is empty or it is better */
+  S.worn=S.worn||{};
+  const cur=relicById(S.worn[got.slot]);
+  const better=!cur||((got.atk||0)+(got.def||0))>((cur.atk||0)+(cur.def||0));
+  if(better)S.worn[got.slot]=got.id;
+  return {relic:got,worn:better};
+}
+function openKitBag(){
+  paused=true;
+  S.worn=S.worn||{};
+  const slots=[['arm','In hand'],['body','Worn'],['trinket','Carried']];
+  const rows=slots.map(([s,label])=>{
+    const have=foundRelics().filter(r=>r.slot===s);
+    const cur=relicById(S.worn[s]);
+    return '<h3 style="font-size:14px;margin:14px 0 6px;">'+label+'</h3>'
+      +(have.length?have.map(r=>{
+        const on=(S.worn[s]===r.id);
+        return '<div class="row"><div style="min-width:0;"><strong>'+r.n+'</strong>'
+          +(on?' <span class="hint" style="color:var(--green)">· in use</span>':'')
+          +'<div class="hint">'+r.t+'</div>'
+          +'<div class="hint" style="color:var(--amber);">'
+          +(r.atk?('+'+r.atk+' harm'):'')+(r.atk&&r.def?' · ':'')+(r.def?('+'+r.def+' guard'):'')+'</div></div>'
+          +(on?'<span class="hint">✓</span>':'<button data-wear="'+r.id+'">Take it</button>')+'</div>';
+      }).join(''):'<div class="hint">Nothing yet.</div>');
+  }).join('');
+  OR('<h3>What you carry down</h3>'
+    +'<div class="hint" style="margin-bottom:6px;">Found in the deep, never bought. '
+    +'Altogether: <strong>+'+relicAtk()+'</strong> harm, <strong>+'+relicDef()+'</strong> guard.</div>'
+    +rows
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-wear]').forEach(b=>b.onclick=async()=>{
+    const r=relicById(b.dataset.wear);
+    S.worn[r.slot]=r.id;SFX.ok();await save();openKitBag();
+  });
+  document.getElementById('closeB').onclick=close;
+}
 /* ---- kit you carry down, and keep ---- */
 const DELVE_GEAR=[
   {id:'lamp',   n:'A better lamp',     cost:{Iron:2,Cloth:1},   t:'You see further.',                      eff:'+1 to looking'},
@@ -4397,7 +4510,12 @@ const FOE_FUMBLE=[
  "{t} slips in the wet and spends the round being embarrassed.",
 ];
 function dR(n){return 1+Math.floor(Math.random()*n);}
-function bLog(t){const B=S.battle;if(!B)return;B.log.push(t);if(B.log.length>5)B.log.shift();}
+function bLog(t){
+  const B=S.battle;if(!B)return;
+  B.log.push(t);if(B.log.length>6)B.log.shift();
+  B.logAt=B.logAt||[];B.logAt.push(Date.now());
+  while(B.logAt.length>B.log.length)B.logAt.shift();
+}
 function classSkill(cls){
   return ({fighter:{n:'Cleave',cost:2},ranger:{n:'Aimed shot',cost:2},
            mage:{n:'Hedge-bolt',cost:3},healer:{n:'Poultice',cost:2}})[cls];
@@ -4419,8 +4537,8 @@ function startBattle(foes){
   paused=true;
   renderBattle();
   const first=battleActor();
-  if(first&&first.side==='them')setTimeout(()=>foeTurn(first.i),700);
-  else if(first&&first.side==='us'&&!B.party[first.i].ref.you)setTimeout(()=>mateTurn(first.i),600);
+  if(first&&first.side==='them')setTimeout(()=>foeTurn(first.i),1000);
+  else if(first&&first.side==='us'&&!B.party[first.i].ref.you)setTimeout(()=>mateTurn(first.i),900);
 }
 function battleActor(){
   const B=S.battle;if(!B)return null;
@@ -4441,8 +4559,8 @@ function advanceTurn(){
   if(!B.party.some(p=>p.hp>0&&!p.down)){endBattle(false);return;}
   const a=battleActor();
   if(!a){endBattle(true);return;}
-  if(a.side==='them'){setTimeout(()=>foeTurn(a.i),620);renderBattle();return;}
-  if(a.side==='us'&&!B.party[a.i].ref.you){setTimeout(()=>mateTurn(a.i),520);renderBattle();return;}
+  if(a.side==='them'){setTimeout(()=>foeTurn(a.i),900);renderBattle();return;}
+  if(a.side==='us'&&!B.party[a.i].ref.you){setTimeout(()=>mateTurn(a.i),800);renderBattle();return;}
   if(turnWatch){clearTimeout(turnWatch);turnWatch=null;}
   B.phase='menu';B.barDrawn=false;renderBattle();
 }
@@ -4498,7 +4616,7 @@ function doAttack(pi,ti,kind){
     const t=depthLoot();S.dg.loot[t.item]=(S.dg.loot[t.item]||0)+1;
   }
   B.phase='resolve';renderBattle();
-  setTimeout(advanceTurn,780);
+  setTimeout(advanceTurn,1500);
 }
 function doHeal(pi){
   const B=S.battle;if(!B)return;
@@ -4515,20 +4633,20 @@ function doHeal(pi){
     if(hurt.hp>0)hurt.down=false;
     bLog(p.name+(roll===20?' does something genuinely clever — ':' patches up ')+hurt.name+' (+'+h+').');
   }
-  B.phase='resolve';renderBattle();setTimeout(advanceTurn,700);
+  B.phase='resolve';renderBattle();setTimeout(advanceTurn,1300);
 }
 function doGuard(pi){
   const B=S.battle;if(!B)return;
   B.party[pi].guard=2;
   bLog(B.party[pi].name+' braces.');
-  B.phase='resolve';renderBattle();setTimeout(advanceTurn,520);
+  B.phase='resolve';renderBattle();setTimeout(advanceTurn,1100);
 }
 function doFlee(){
   const B=S.battle;if(!B)return;
   const roll=dR(20);
   if(roll>=9){bLog('You all leg it, with varying dignity.');setTimeout(()=>endBattle(null),700);}
   else{bLog('You turn to run and immediately think better of it. (rolled '+roll+')');
-    B.phase='resolve';setTimeout(advanceTurn,760);}
+    B.phase='resolve';setTimeout(advanceTurn,1500);}
   renderBattle();
 }
 function mateTurn(i){
@@ -4564,6 +4682,7 @@ function foeTurn(i){
       bAnim('fumble',{side:'them',idx:i,dur:0.7});}
     else if(roll>=8){
       let dmg=dR(A.dmg)+2;
+      if(t.ref&&t.ref.you)dmg=Math.max(1,dmg-relicDef());
       if(t.guard>0){dmg=Math.round(dmg*0.45);t.guard--;bLog(t.name+' takes it on the guard.');}
       t.hp-=dmg;
       bLog(A.n+' catches '+t.name+' for '+dmg+'.');
@@ -4578,12 +4697,71 @@ function foeTurn(i){
       bAnim('strike',{side:'them',idx:i,tidx:ti2,dur:0.55,done:()=>{
         SFX.miss();bFloat(tp2.x,tp2.y-30,'miss','rgba(237,230,214,0.6)');}});}
   }catch(e){bLog(A.n+' does something incomprehensible.');}
-  B.phase='resolve';renderBattle();setTimeout(advanceTurn,760);
+  B.phase='resolve';renderBattle();setTimeout(advanceTurn,1500);
 }
 function endBattleAfter(won){
   const D=S.dg;
   if(won===false){dgLeave(true);return;}
   paused=false;close();save();
+}
+/* the thing at the bottom goes down — that ought to be worth something */
+function bossFelled(){
+  const D=S.dg;if(!D||D.bossPaid)return;
+  D.bossPaid=true;
+  const dp=depthOf();
+  /* a real haul */
+  const haul={};
+  const pool=(dp.loot||['Stone']).concat(['Iron','Cloth','Berries']);
+  for(let i=0;i<6+D.depth*2;i++){
+    const it=pool[Math.floor(Math.random()*pool.length)];
+    haul[it]=(haul[it]||0)+1;
+    D.loot[it]=(D.loot[it]||0)+1;
+  }
+  /* and something you keep */
+  const found=findRelic(D.depth);
+  S.dgDepth=Math.max(S.dgDepth||0,D.depth);
+  S.standing+=6;
+  D.bossReward={haul,found,depth:D.depth,place:dp.name};
+  SFX.win();
+  save();
+}
+function showBossReward(){
+  const D=S.dg;if(!D||!D.bossReward)return false;
+  const R=D.bossReward;
+  D.bossReward=null;
+  paused=true;
+  const rows=Object.entries(R.haul).map(([k,v])=>
+    '<div class="row"><div><strong>'+esc(k)+'</strong></div><span class="hint">+'+v+'</span></div>').join('');
+  OR('<h3>The bottom of '+esc(R.place)+'</h3>'
+    +'<p class="sub">It goes down, and the noise it was making stops. '
+    +'For a moment there is nothing but the sound of everybody breathing.</p>'
+    +(R.found
+      ? ('<div class="card" style="border-color:var(--amber);">'
+         +'<strong style="color:var(--amber);">'+esc(R.found.relic.n)+'</strong>'
+         +'<div class="hint">'+esc(R.found.relic.t)+'</div>'
+         +'<div class="hint" style="color:var(--amber);">'
+         +(R.found.relic.atk?('+'+R.found.relic.atk+' harm'):'')
+         +(R.found.relic.atk&&R.found.relic.def?' · ':'')
+         +(R.found.relic.def?('+'+R.found.relic.def+' guard'):'')
+         +(R.found.worn?' — you put it on there and then':' — stowed for later')+'</div></div>')
+      : '')
+    +'<h3 style="font-size:14px;margin:14px 0 6px;">Off the floor</h3>'+rows
+    +'<div class="hint" style="margin-top:10px;">The stair down is open. '
+    +'Go deeper if you have the legs for it, or climb out and keep what you have.</div>'
+    +'<div class="acts"><button class="primary" id="deeperB">Deeper</button>'
+    +'<button id="outB">Climb out</button></div>');
+  document.getElementById('deeperB').onclick=()=>{
+    const cls=(S.dg.party.find(p=>p.you)||{}).cls;
+    const mates=S.dg.party.filter(p=>!p.you).map(p=>p.id);
+    const keep=S.dg.loot, dep=S.dg.depth;
+    close();
+    enterDeep(cls,mates);
+    S.dg.loot=keep;S.dg.depth=dep+1;
+    SFX.deeper();
+    toast('Level '+S.dg.depth+'. It gets worse from here.');
+  };
+  document.getElementById('outB').onclick=()=>{close();dgLeave(false);};
+  return true;
 }
 function endBattle(won){
   const B=S.battle;if(!B)return;
@@ -4591,6 +4769,12 @@ function endBattle(won){
   B.party.forEach(p=>{if(p.ref)p.ref.hp=p.hp;});
   if(won===false){S.battle=null;dgLeave(true);return;}
   B.foes.forEach(bf=>{if(bf.ref)bf.ref.hp=bf.hp;});
+  /* if the thing at the bottom went down in there, that is the run made */
+  if(won===true&&D){
+    const r=roomAt(D.rx,D.ry);
+    const killedBoss=B.foes.some(bf=>bf.k==="boss"&&bf.hp<=0);
+    if(killedBoss){D.bossDown=true;if(r)r.cleared=true;bossFelled();}
+  }
   if(won===true){SFX.win();}
   else{
     B.foes.forEach(bf=>{if(bf.ref&&D){
@@ -4832,11 +5016,25 @@ function drawBattle(){
       ctx.fillText(d.label,bx,by+48);
     }
   }
-  ctx.font='12px Inter';ctx.textAlign='center';
-  const log=(B.log||[]).slice(-2);
+  /* the running account of the fight — the newest line stays lit */
+  const log=(B.log||[]).slice(-3);
+  const at=(B.logAt||[]).slice(-3);
+  const boxH=16+log.length*19;
+  ctx.fillStyle='rgba(10,14,12,0.72)';
+  ctx.fillRect(W*0.06,H*0.80-boxH+10,W*0.88,boxH);
+  ctx.textAlign='center';
   log.forEach((l,i)=>{
-    ctx.fillStyle='rgba(237,230,214,'+(i===log.length-1?0.92:0.45)+')';
-    ctx.fillText(l,W/2,H*0.87+i*17);
+    const newest=(i===log.length-1);
+    const age=at[i]?(Date.now()-at[i]):9999;
+    /* a new line arrives bright and fades back over a second */
+    const lit=newest?1:Math.max(0.34,0.72-(log.length-1-i)*0.2);
+    ctx.font=(newest?'bold ':'')+'13px Inter';
+    ctx.fillStyle='rgba(237,230,214,'+lit+')';
+    ctx.fillText(l,W/2,H*0.80-boxH+30+i*19);
+    if(newest&&age<450){
+      ctx.fillStyle='rgba(224,166,61,'+(0.5*(1-age/450))+')';
+      ctx.fillText(l,W/2,H*0.80-boxH+30+i*19);
+    }
   });
 }
 function renderBattle(){
@@ -4851,7 +5049,11 @@ function renderBattle(){
       +'<div class="acts"><button class="primary" id="bDone">'
       +(B.over==='you'?'Onward':'Back to the light')+'</button></div></div></div>';
     const d=document.getElementById('bDone');
-    if(d)d.onclick=()=>{const won=B.over==='you';S.battle=null;endBattleAfter(won);};
+    if(d)d.onclick=()=>{
+      const won=B.over==='you';S.battle=null;
+      if(won&&S.dg&&S.dg.bossReward){paused=false;close();showBossReward();return;}
+      endBattleAfter(won);
+    };
     return;
   }
   if(!isYou){
@@ -4892,7 +5094,7 @@ function renderBattle(){
     mine.hp=Math.min(mine.max,mine.hp+EATS[it.item]*2);
     const mp=bPos('us',pi);bFloat(mp.x,mp.y-30,'+'+(EATS[it.item]*2),'#6FA85C');
     bLog(mine.name+' eats '+it.item.toLowerCase()+' mid-fight, which is either brave or rude.');
-    B.phase='resolve';renderBattle();setTimeout(advanceTurn,700);
+    B.phase='resolve';renderBattle();setTimeout(advanceTurn,1300);
   };
 }
 
@@ -4934,7 +5136,7 @@ function makeDungeon(depth){
   Object.values(rooms).forEach(r=>{
     if(r.kind!=='fight')return;
     const roll=Math.random();
-    r.kind=roll<0.15?'treasure':(roll<0.24?'rest':(roll<0.32?'shrine':'fight'));
+    r.kind=roll<0.26?'treasure':(roll<0.36?'rest':(roll<0.46?'shrine':'fight'));
   });
   return {rooms,w,h,start:[0,Math.floor(h/2)]};
 }
@@ -4965,13 +5167,13 @@ function fillRoom(r,depth){
     r.fire={x:Math.floor(DW/2)*TILE,y:Math.floor(DH/2)*TILE,used:false};
   }
   /* a trap, hidden until somebody spots it */
-  if(r.kind!=='start'&&Math.random()<0.42){
+  if(r.kind!=='start'&&Math.random()<0.62){
     const T2=SNARES[Math.floor(Math.random()*SNARES.length)];
     r.trap={id:T2.id,x:(3+Math.random()*(DW-6))*TILE,y:(3+Math.random()*(DH-6))*TILE,
             found:false,sprung:false};
   }
   /* something hidden, if anybody thinks to look */
-  if(Math.random()<0.30){
+  if(Math.random()<0.55){
     r.hidden={x:(2+Math.random()*(DW-4))*TILE,y:(2+Math.random()*(DH-4))*TILE,found:false,taken:false};
   }
   const props=2+Math.floor(Math.random()*4);
@@ -5166,11 +5368,12 @@ function dgSwing(){
     const dx=f.x-D.px,dy=f.y-D.py,d=Math.hypot(dx,dy);
     if(d>reach)return;
     if(((dx/d)*dirs[0]+(dy/d)*dirs[1])<0.35)return;
-    const dmg=2+Math.floor(Math.random()*c.dmg)+(hasGear('whet')?1:0);
+    const dmg=2+Math.floor(Math.random()*c.dmg)+(hasGear('whet')?1:0)
+      +(p.you?relicAtk():0);
     f.hp-=dmg;f.hurt=0.25;f.knock=0.12;f.kx=dx/d;f.ky=dy/d;hit++;
     if(f.hp<=0){
       const t=depthLoot();D.loot[t.item]=(D.loot[t.item]||0)+1;
-      if(f.k==='boss'){r.cleared=true;D.bossDown=true;}
+      if(f.k==='boss'){r.cleared=true;D.bossDown=true;bossFelled();}
     }
   });
   if(hit)SFX.hit();
@@ -5316,6 +5519,26 @@ function drawDeep(){
       ctx.fillStyle='#5A5148';ctx.fillRect(px+7,py+14,9,8);ctx.fillRect(px+15,py+17,8,6);
     }
   });
+  /* a trap, once somebody has spotted it */
+  if(r.trap&&r.trap.found&&!r.trap.sprung){
+    const t=r.trap;
+    ctx.strokeStyle='rgba(196,73,60,0.75)';ctx.lineWidth=2;
+    ctx.setLineDash([5,4]);
+    ctx.beginPath();ctx.arc(t.x,t.y,20,0,7);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='rgba(196,73,60,0.9)';ctx.font='9px Inter';ctx.textAlign='center';
+    ctx.fillText('trap',t.x,t.y-25);
+  }
+  /* something hidden, once found */
+  if(r.hidden&&r.hidden.found&&!r.hidden.taken){
+    const h=r.hidden;
+    const tw=Math.sin(Date.now()/300)*0.3+0.7;
+    ctx.fillStyle='rgba(224,166,61,'+tw+')';
+    ctx.fillRect(h.x-6,h.y-6,12,12);
+    ctx.fillStyle='#5A4632';ctx.fillRect(h.x-8,h.y-8,16,3);
+    ctx.fillStyle='rgba(224,166,61,0.9)';ctx.font='9px Inter';ctx.textAlign='center';
+    ctx.fillText('something here  (E)',h.x,h.y-16);
+  }
   if(r.chest){
     const c2=r.chest;
     ctx.fillStyle='#5A4028';ctx.fillRect(c2.x-14,c2.y-10,28,22);
@@ -5384,7 +5607,13 @@ function drawDeep(){
   else if(r.kind==='boss'&&D.bossDown){ctx.fillStyle='rgba(224,166,61,0.95)';
     ctx.fillText('Stairs down. E to go deeper, Q to climb out.',cw/2,ch-16);}
   else{ctx.fillStyle='rgba(237,230,214,0.6)';
-    ctx.fillText('Clear.  R to search the room  ·  Q to climb out.',cw/2,ch-16);}
+    const bits=[];
+    if(!r.searched)bits.push('R to search');
+    if(r.chest&&!r.chest.open)bits.push('a chest here');
+    if(r.hidden&&r.hidden.found&&!r.hidden.taken)bits.push('something behind the stone');
+    if(r.trap&&r.trap.found&&!r.trap.sprung)bits.push('mind the trap');
+    bits.push('Q to climb out');
+    ctx.fillText(bits.join('  \u00b7  '),cw/2,ch-16);}
 }
 /* ============================================================
    BUILDING OUT — rooms grow, and there is a stair.
@@ -7522,10 +7751,14 @@ const ROOT=document.getElementById('root');
 function esc(s){const d=document.createElement('div');d.innerText=s;return d.innerHTML;}
 function OR(inner){ROOT.innerHTML='<div class="overlay"><div class="sheet">'+inner+'</div></div>';}
 function close(){ROOT.innerHTML='';paused=false;}
-function toast(m){
+function toast(m,hold){
   const h=document.getElementById('hint');
+  if(!h)return;
   h.innerText=m;h.style.display='block';h.dataset.t='1';
-  clearTimeout(h._x);h._x=setTimeout(()=>{h.dataset.t='';h.style.display='none';},1800);
+  clearTimeout(h._x);
+  /* long messages stay up long enough to actually read */
+  const ms=hold||Math.max(2200,Math.min(7000,900+String(m).length*55));
+  h._x=setTimeout(()=>{h.dataset.t='';h.style.display='none';},ms);
 }
 function fmt(){const h=Math.floor(S.min/60)%24,m=Math.floor(S.min%60);return h+':'+(m<10?'0':'')+m;}
 function updateHud(){
@@ -7608,7 +7841,7 @@ function loopBody(ts){
     const bdt=Math.min(0.05,(ts-last)/1000);last=ts;
     battleUpdate(bdt);
     drawBattle();
-    const hb=document.getElementById('hint');if(hb)hb.style.display='none';
+    const hb=document.getElementById('hint');if(hb&&hb.dataset.t!=='1')hb.style.display='none';
     if(!bBusy()&&S.battle.phase==='menu'&&!S.battle.barDrawn){
       S.battle.barDrawn=true;renderBattle();
     }
@@ -7620,12 +7853,12 @@ function loopBody(ts){
   if(!menuOpen()){
     if(S.scene==='fishing'&&S.fish){
           fishUpdate(dt);drawFish();
-          const hf=document.getElementById('hint');if(hf)hf.style.display='none';
+          const hf=document.getElementById('hint');if(hf&&hf.dataset.t!=='1')hf.style.display='none';
           return;
         }
     if(S.scene==='hunting'&&S.hunt){
           huntUpdate(dt);drawHunt();
-          const hh2=document.getElementById('hint');if(hh2)hh2.style.display='none';
+          const hh2=document.getElementById('hint');if(hh2&&hh2.dataset.t!=='1')hh2.style.display='none';
           return;
         }
     if(S.inside){
@@ -7680,7 +7913,7 @@ function loopBody(ts){
           S.dg.swing=Math.max(0,S.dg.swing-dt);
           dgMove(dt);
           drawDeep();
-          const h2=document.getElementById('hint');if(h2)h2.style.display='none';
+          const h2=document.getElementById('hint');if(h2&&h2.dataset.t!=='1')h2.style.display='none';
           return;
         }
   }
