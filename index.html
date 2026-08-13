@@ -7569,7 +7569,12 @@ function openIntro(){
 
 /* ================= LOOP ================= */
 let last=0,lastMin=-1;
-function menuOpen(){return !!(ROOT&&ROOT.innerHTML);}
+function menuOpen(){
+  if(!ROOT||!ROOT.innerHTML)return false;
+  /* the battle command bar lives in the same root but is part of the scene */
+  if(ROOT.innerHTML.indexOf('battlebar')>=0)return false;
+  return true;
+}
 let loopErrs=0;
 function loop(ts){
   try{ loopBody(ts); }
@@ -7598,6 +7603,18 @@ function fitControls(){
 let stuckFor=0;
 function loopBody(ts){
   fitControls();
+  /* a fight owns the screen wherever it started */
+  if(S.battle&&!menuOpen()){
+    const bdt=Math.min(0.05,(ts-last)/1000);last=ts;
+    battleUpdate(bdt);
+    drawBattle();
+    const hb=document.getElementById('hint');if(hb)hb.style.display='none';
+    if(!bBusy()&&S.battle.phase==='menu'&&!S.battle.barDrawn){
+      S.battle.barDrawn=true;renderBattle();
+    }
+    if(bBusy())S.battle.barDrawn=false;
+    return;
+  }
   const dt=Math.min(0.05,(ts-last)/1000);last=ts;
   /* the scenes run on their own — a menu being open must not freeze them */
   if(!menuOpen()){
@@ -7658,17 +7675,7 @@ function loopBody(ts){
           drawInside();
           return;
         }
-    if(S.battle){
-      battleUpdate(dt);
-      drawBattle();
-      const hb=document.getElementById('hint');if(hb)hb.style.display='none';
-      /* the command bar refreshes when the animation settles */
-      if(!bBusy()&&S.battle.phase==='menu'&&!S.battle.barDrawn){
-        S.battle.barDrawn=true;renderBattle();
-      }
-      if(bBusy())S.battle.barDrawn=false;
-      return;
-    }
+
     if(S.scene==='deep'&&dgOn()){
           S.dg.swing=Math.max(0,S.dg.swing-dt);
           dgMove(dt);
