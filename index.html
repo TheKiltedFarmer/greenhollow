@@ -31,6 +31,7 @@
   #hud .right{display:flex;gap:6px;}
   #hud .right button{padding:5px 9px;font-size:12px;}
   #wrap{position:relative;flex:1;overflow:hidden;background:#0A120D;}
+  #controls{position:absolute;left:0;right:0;bottom:0;height:0;pointer-events:none;z-index:3;}
   canvas{display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated;}
   #hint{position:absolute;left:50%;transform:translateX(-50%);bottom:100px;background:rgba(16,26,20,0.92);
         border:1px solid var(--amber);color:var(--amber);font-size:13px;padding:6px 14px;border-radius:20px;
@@ -55,7 +56,54 @@
        background:rgba(224,166,61,0.85);color:var(--bg);font-size:22px;font-weight:700;border:none;display:none;z-index:4;}
   #swap{position:absolute;right:26px;bottom:16px;width:52px;height:52px;border-radius:50%;
         background:rgba(78,139,139,0.8);color:var(--bg);font-size:18px;border:none;display:none;z-index:4;}
-  @media (pointer:coarse){#joy,#act,#swap{display:block;}#toolbar{bottom:76px;}}
+  @media (pointer:coarse){#joy,#act,#swap{display:block;}}
+  /* scenes that do not need the farming tools get the screen back */
+  body.noTools #toolbar{display:none;}
+  body.noMove  #joy{display:none;}
+  body.noMove  #swap{display:none;}
+  body.noAct   #act{display:none;}
+
+  /* ---- touch layout: nothing sits on top of anything else ----
+     the controls own the bottom band, the hotbar sits clear above it,
+     and everything lifts above the home indicator.                */
+  @media (pointer:coarse){
+    :root{--pad-b:env(safe-area-inset-bottom,0px);}
+    #joy{left:12px;bottom:calc(12px + var(--pad-b));width:92px;height:92px;}
+    #stick{left:30px;top:30px;width:32px;height:32px;}
+    #act{right:14px;bottom:calc(40px + var(--pad-b));width:60px;height:60px;font-size:20px;}
+    #swap{right:84px;bottom:calc(14px + var(--pad-b));width:46px;height:46px;font-size:16px;}
+    /* the hotbar clears the controls and scrolls if it must */
+    #toolbar{left:0;right:0;transform:none;justify-content:flex-start;
+             bottom:calc(116px + var(--pad-b));
+             overflow-x:auto;overflow-y:hidden;padding:2px 10px 6px;
+             gap:5px;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+    #toolbar::-webkit-scrollbar{display:none;}
+    .slot{width:58px;height:62px;flex:0 0 auto;border-radius:7px;padding-top:3px;}
+    .slot canvas{width:32px;height:32px;}
+    .slot .lbl{font-size:9px;margin-top:0;}
+    .slot .n{font-size:10px;top:1px;right:3px;padding:0 4px;}
+    .slot .key{font-size:8px;top:1px;left:3px;}
+    .slot.sel{transform:translateY(-3px);}
+    #hint{bottom:calc(186px + var(--pad-b));font-size:12px;padding:5px 12px;}
+    .overlay{padding:12px 10px calc(28px + var(--pad-b));}
+    .overlay.battlebar{padding:0 8px calc(10px + var(--pad-b));}
+  }
+  /* short screens: give the hotbar back some room */
+  @media (pointer:coarse) and (max-height:700px){
+    #joy{width:80px;height:80px;}
+    #stick{left:26px;top:26px;width:28px;height:28px;}
+    #act{width:54px;height:54px;bottom:calc(34px + var(--pad-b));}
+    #swap{right:76px;width:42px;height:42px;}
+    #toolbar{bottom:calc(102px + var(--pad-b));}
+    .slot{width:52px;height:56px;}
+    .slot canvas{width:28px;height:28px;}
+    #hint{bottom:calc(166px + var(--pad-b));}
+  }
+  /* six slots on a narrow phone: let them shrink rather than overflow */
+  @media (pointer:coarse) and (max-width:420px){
+    .slot{width:54px;}
+    .slot .lbl{font-size:8.5px;}
+  }
   .overlay{position:absolute;inset:0;background:rgba(10,18,13,0.9);z-index:10;display:flex;align-items:flex-start;
            justify-content:center;overflow-y:auto;padding:18px 12px 40px;}
   .sheet{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px;max-width:640px;width:100%;}
@@ -1257,6 +1305,31 @@ function selectedSeed(){
 /* ================= COLLISION ================= */
 const blocked=new Set();
 /* recompute one tile — used the moment the world changes under you */
+/* if the player somehow ends up inside a wall, put them back on open ground.
+   nothing in this valley should ever trap you. */
+function freePlayer(){
+  const HW=8,FT=17,FB=23;
+  const fits=(px,py)=>!blockedPx(px+16-HW,py+FT)&&!blockedPx(px+16+HW,py+FT)
+    &&!blockedPx(px+16-HW,py+FB)&&!blockedPx(px+16+HW,py+FB);
+  if(fits(S.px,S.py))return false;
+  /* spiral outward for the nearest place a body will go */
+  const sx=Math.round(S.px/TILE), sy=Math.round(S.py/TILE);
+  for(let r=1;r<=14;r++){
+    for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+      if(Math.max(Math.abs(dx),Math.abs(dy))!==r)continue;
+      const nx=(sx+dx)*TILE, ny=(sy+dy)*TILE;
+      if(nx<TILE||ny<TILE||nx>(MW-2)*TILE||ny>(MH-2)*TILE)continue;
+      if(fits(nx,ny)){
+        S.px=nx;S.py=ny;
+        return true;
+      }
+    }
+  }
+  /* nothing near — go and stand at your own door */
+  const home=BLD.home||BLD.c1;
+  if(home){S.px=home.door.x*TILE;S.py=(home.door.y+1)*TILE;}
+  return true;
+}
 function refreshTile(x,y){
   const k=key(x,y);
   const permanent =
@@ -6902,11 +6975,22 @@ function placeHere(x,y){
     if(S.farm[key(cx,cy)]){toast('That is planted ground.');return;}
     if(Object.values(BLD).some(b=>cx>=b.x&&cx<b.x+b.w&&cy>=b.y&&cy<b.y+b.h)){toast('Something is already there.');return;}
     if((S.built||[]).some(b=>cx>=b.x&&cx<b.x+b.w&&cy>=b.y&&cy<b.y+b.h)){toast('Something is already there.');return;}
+    /* you are standing there — the walls would go up around you */
+    const myX=Math.floor((S.px+16)/TILE), myY=Math.floor((S.py+20)/TILE);
+    if(cx===myX&&cy===myY){toast('You are stood right there. Move aside first.');return;}
+    /* and neither does anybody else get built into a wall */
+    const someone=FOLK.some(f=>{
+      if(isMe(f))return false;
+      const p=folkPos(f);
+      return p&&p.x===cx&&p.y===cy;
+    });
+    if(someone){toast('Somebody is stood there.');return;}
   }
   if(!has(plan.cost)){toast('Not enough materials any more.');S.placing=null;return;}
   payFor(plan.cost);
   S.built.push({id:plan.id,x,y,w:plan.w,h:plan.h,day:S.day});
   for(let by=y;by<y+plan.h;by++)for(let bx=x;bx<x+plan.w;bx++)refreshTile(bx,by);
+  if(freePlayer())toast('You stepped clear of it just in time.');
   SFX.build();
   S.placing=null;
   S.standing+=3;
@@ -7499,7 +7583,21 @@ function loop(ts){
   }
   requestAnimationFrame(loop);
 }
+function fitControls(){
+  const b=document.body;if(!b||!b.classList)return;
+  const inBattle=!!S.battle;
+  const inScene=(S.scene==='fishing'||S.scene==='hunting');
+  const inDeep=(S.scene==='deep');
+  const inside=!!S.inside;
+  /* the hotbar is for the farm — nowhere else */
+  b.classList.toggle('noTools',inBattle||inScene||inDeep||inside);
+  /* you do not walk in a battle, and you do not swap tools off the farm */
+  b.classList.toggle('noMove',inBattle);
+  b.classList.toggle('noAct',inBattle);
+}
+let stuckFor=0;
 function loopBody(ts){
+  fitControls();
   const dt=Math.min(0.05,(ts-last)/1000);last=ts;
   /* the scenes run on their own — a menu being open must not freeze them */
   if(!menuOpen()){
@@ -7595,8 +7693,17 @@ function loopBody(ts){
       const free=(px,py)=>!blockedPx(px+16-HW,py+FT)&&!blockedPx(px+16+HW,py+FT)
         &&!blockedPx(px+16-HW,py+FB)&&!blockedPx(px+16+HW,py+FB);
       const nx=S.px+vx*sp,ny=S.py+vy*sp;
-      if(free(nx,S.py))S.px=nx;
-      if(free(S.px,ny))S.py=ny;
+      const movedX=free(nx,S.py), movedY=free(S.px,ny);
+      if(movedX)S.px=nx;
+      if(movedY)S.py=ny;
+      /* pressing a direction and going nowhere at all means something is wrong */
+      if(!movedX&&!movedY){
+        stuckFor=(stuckFor||0)+dt;
+        if(stuckFor>0.7){
+          stuckFor=0;
+          if(freePlayer())toast('You work yourself loose.');
+        }
+      }else stuckFor=0;
       pstep+=dt*8;
       pface=Math.abs(vx)>Math.abs(vy)?(vx>0?2:3):(vy>0?1:0);
     }
@@ -7624,6 +7731,7 @@ function loopBody(ts){
 
   await load();
   buildCollision();
+  if(typeof freePlayer==="function"&&freePlayer())console.log("freed the player from a wall on load");
   buildSprites();
   resize();updateHud();drawToolbar();
   if(!S.started)openIntro();
