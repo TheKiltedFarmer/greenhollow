@@ -424,7 +424,7 @@ function newGame(){
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
     delve:null, reports:[], stock:{}, inside:null, room:'main', ipx:0, ipy:0, gear:{}, said:[],
-    relics:[], worn:{}, bonds:{}, bestiary:{},
+    relics:[], worn:{}, bonds:{}, bestiary:{}, lobby:null, lobby:null,
     weather:'fair', festDone:{}, festCatch:{},
     deck:null, cards:null, bones:null, stones:null, match:null,
     fish:null, hunt:null, myStuff:{}, carrying:null, fish:null, hunt:null,
@@ -445,7 +445,7 @@ async function load(){
       S.myStuff=S.myStuff||{};S.room=S.room||'main';S.carrying=S.carrying||null;
       S.gear=S.gear||{};S.said=S.said||[];S.weather=S.weather||'fair';
       S.relics=S.relics||[];S.worn=S.worn||{};S.stamMax=S.stamMax||STAMINA;
-      S.bonds=S.bonds||{};S.bestiary=S.bestiary||{};
+      S.bonds=S.bonds||{};S.bestiary=S.bestiary||{};S.lobby=null;S.lobby=null;
       S.festDone=S.festDone||{};S.festCatch=S.festCatch||{};
       S.deck=S.deck||starterDeck();
       S.cards=null;S.bones=null;S.stones=null;S.match=null;
@@ -558,6 +558,46 @@ const NET={
     this.growers=d.growers||[];
     this.notes=d.notes||[];
     this.deeds=d.deeds||[];
+  },
+
+  /* ---- going down together ---- */
+  async delveOpen(depth,seed,theme,mood,cls,hp){
+    if(!this.ready())return {error:'not sharing a valley'};
+    const {data,error}=await this.sb.rpc('delve_open',
+      {p_code:this.code,p_secret:this.secret,p_depth:depth,p_seed:seed,
+       p_theme:theme,p_mood:mood,p_cls:cls,p_hp:hp,p_look:this.look()});
+    if(error)return {error:error.message};
+    return data||{};
+  },
+  async delveList(){
+    if(!this.ready())return [];
+    const {data}=await this.sb.rpc('delve_open_list',{p_code:this.code,p_secret:this.secret});
+    return data||[];
+  },
+  async delveJoin(id,cls,hp){
+    if(!this.ready())return {error:'not sharing a valley'};
+    const {data,error}=await this.sb.rpc('delve_join',
+      {p_code:this.code,p_secret:this.secret,p_delve:id,p_cls:cls,p_hp:hp,p_look:this.look()});
+    if(error)return {error:error.message};
+    return data||{};
+  },
+  async delveState(id){
+    if(!this.ready())return null;
+    const {data}=await this.sb.rpc('delve_state',{p_code:this.code,p_secret:this.secret,p_delve:id});
+    return data||null;
+  },
+  async delveBeat(id,hp){
+    if(!this.ready())return;
+    await this.sb.rpc('delve_beat',{p_code:this.code,p_secret:this.secret,p_delve:id,p_hp:hp});
+  },
+  async delveMove(id,x,y,state){
+    if(!this.ready())return;
+    await this.sb.rpc('delve_move',{p_code:this.code,p_secret:this.secret,
+      p_delve:id,p_x:x,p_y:y,p_state:state||null});
+  },
+  async delveClose(id){
+    if(!this.ready())return;
+    await this.sb.rpc('delve_close',{p_code:this.code,p_secret:this.secret,p_delve:id});
   },
   async pull(){
     if(!this.sb||!this.code)return;
@@ -3504,7 +3544,180 @@ function depthLoot(){
   return {item,n:1+Math.floor(Math.random()*3)};
 }
 
+/* ============================================================
+   GOING DOWN TOGETHER — one door, several people.
+   ============================================================ */
+let lobbyTimer=null, delveTimer=null;
+function stopLobby(){if(lobbyTimer){clearInterval(lobbyTimer);lobbyTimer=null;}}
+function stopDelveSync(){if(delveTimer){clearInterval(delveTimer);delveTimer=null;}}
 function openDoor(){
+  paused=true;
+  const canShare=NET.ready();
+  OR('<h3>A door in the trees</h3>'
+    +'<p class="sub">Somebody put a door here, a long time ago, in a hillside with nothing behind it. '
+    +'It is warm to touch.</p>'
+    +'<div class="row"><div style="min-width:0;"><strong>On your own</strong>'
+      +'<div class="hint">Take three of the folk with you. They will do as they are told.</div></div>'
+      +'<button class="primary" id="soloB">Go down</button></div>'
+    +(canShare
+      ? ('<div class="row"><div style="min-width:0;"><strong>Ask the others</strong>'
+         +'<div class="hint">Open it up and anybody in '+esc(NET.code)+' can come. '
+         +'You wait at the top until they are ready.</div></div>'
+         +'<button id="hostB">Invite</button></div>')
+      : ('<div class="card"><strong>Ask the others</strong>'
+         +'<div class="hint">You are not sharing a valley yet — Menu, then Playing with friends.</div></div>'))
+    +'<div id="openDelves"></div>'
+    +'<div class="acts"><button class="primary" id="closeB">Not today</button></div>');
+  document.getElementById('soloB').onclick=()=>{stopLobby();openSoloDoor();};
+  const hb=document.getElementById('hostB');
+  if(hb)hb.onclick=()=>openCoopClass('host');
+  document.getElementById('closeB').onclick=()=>{stopLobby();close();};
+  if(canShare){refreshOpenDelves();stopLobby();lobbyTimer=setInterval(refreshOpenDelves,3000);}
+}
+async function refreshOpenDelves(){
+  const box=document.getElementById('openDelves');
+  if(!box){stopLobby();return;}
+  const list=await NET.delveList();
+  const others=(list||[]).filter(d=>!d.mine);
+  if(!others.length){box.innerHTML='';return;}
+  box.innerHTML='<h3 style="font-size:14px;margin:14px 0 6px;">Somebody is waiting</h3>'
+    +others.map(d=>'<div class="row"><div style="min-width:0;"><strong>'+esc(d.host)+'</strong>'
+      +'<div class="hint">level '+d.depth+' \u00b7 '+d.joined+' of 4 \u00b7 '
+      +esc((d['in']||[]).join(', '))+'</div></div>'
+      +'<button data-join="'+d.id+'">Come along</button></div>').join('');
+  box.querySelectorAll('[data-join]').forEach(b=>b.onclick=()=>openCoopClass('join',b.dataset.join));
+}
+function openCoopClass(mode,delveId){
+  stopLobby();paused=true;
+  OR('<h3>What are you, down there?</h3>'
+    +'<p class="sub">'+(mode==='host'?'Pick yours, then the others pick theirs.'
+      :'They are waiting at the top of the stair.')+'</p>'
+    +CLASSES.map(c=>'<div class="row"><div style="min-width:0;"><strong>'+c.name+'</strong>'
+      +'<div class="hint">'+(c.quip||'')+'</div>'
+      +'<div class="hint" style="color:var(--amber);">'
+      +(KNACKS[c.id]?(KNACKS[c.id].n+' \u2014 '+KNACKS[c.id].t):'')+'</div></div>'
+      +'<button data-cls="'+c.id+'">Take it</button></div>').join('')
+    +'<div class="acts"><button id="backB">Back</button></div>');
+  document.querySelectorAll('[data-cls]').forEach(b=>b.onclick=()=>{
+    const cls=b.dataset.cls;
+    if(mode==='host')hostDelve(cls);else joinDelve(delveId,cls);
+  });
+  document.getElementById('backB').onclick=openDoor;
+}
+async function hostDelve(cls){
+  const depth=(S.dgDepth||0)+1;
+  const seed=Math.floor(Math.random()*2000000000);
+  const theme=DEPTHS[Math.floor(Math.random()*DEPTHS.length)].id;
+  const mood=MOODS[Math.floor(Math.random()*MOODS.length)].id;
+  const hp=classById(cls).hp+(hasGear('kit')?4:0);
+  const r=await NET.delveOpen(depth,seed,theme,mood,cls,hp);
+  if(r&&r.error){toast(r.error);return;}
+  S.lobby={id:r.id,host:true,cls,depth,seed,theme,mood};
+  showLobby();
+}
+async function joinDelve(id,cls){
+  const hp=classById(cls).hp+(hasGear('kit')?4:0);
+  const r=await NET.delveJoin(id,cls,hp);
+  if(r&&r.error){toast(r.error);return;}
+  S.lobby={id,host:false,cls};
+  showLobby();
+}
+function showLobby(){
+  paused=true;
+  const L=S.lobby;if(!L)return;
+  const draw=(st)=>{
+    if(!S.lobby)return;
+    const party=(st&&st.party)||[];
+    OR('<h3>'+(L.host?'Waiting at the top':'At the top of the stair')+'</h3>'
+      +'<p class="sub">'+(L.host
+        ? 'Anybody in the valley can see this and come. Go when you are ready \u2014 '
+          +'whoever has not turned up gets walked by the game, and still takes a share.'
+        : 'You are in. '+esc((st&&st.host)||'somebody')+' says when.')+'</p>'
+      +'<div class="card"><strong>Going down</strong>'
+      +(party.length?party.map(p=>'<div class="row"><div><strong>'+esc(p.name)+'</strong> '
+          +'<span class="hint">'+((classById(p.cls)||{}).name||'')+(p.me?' \u00b7 you':'')
+          +(p.away?' \u00b7 not answering':'')+'</span></div>'
+          +'<span class="hint">'+p.hp+'/'+p.max+'</span></div>').join('')
+        :'<div class="hint">Just you so far.</div>')+'</div>'
+      +(st?('<div class="hint" style="margin-top:8px;">'
+        +((DEPTHS.find(d=>d.id===st.theme)||{}).name||'somewhere dark')
+        +' \u00b7 '+((MOODS.find(m=>m.id===st.mood)||{}).n||'')
+        +' \u00b7 level '+st.depth+'</div>'):'')
+      +'<div class="acts">'
+      +(L.host?'<button class="primary" id="goB">Down we go</button>':'')
+      +'<button id="leaveB">'+(L.host?'Call it off':'Leave them to it')+'</button></div>');
+    const g=document.getElementById('goB');
+    if(g)g.onclick=()=>startShared(st);
+    const lv=document.getElementById('leaveB');
+    if(lv)lv.onclick=async()=>{stopLobby();if(L.host)await NET.delveClose(L.id);S.lobby=null;close();};
+    if(!L.host&&st&&st.state==='down'){stopLobby();startShared(st);}
+  };
+  draw(null);
+  stopLobby();
+  const poll=async()=>{
+    if(!S.lobby||S.dg){stopLobby();return;}
+    const st=await NET.delveState(S.lobby.id);
+    if(!st||st.error){stopLobby();return;}
+    draw(st);
+  };
+  poll();
+  lobbyTimer=setInterval(poll,1800);
+}
+function startShared(st){
+  stopLobby();
+  const L=S.lobby;if(!L)return;
+  const humans=[];
+  ((st&&st.party)||[]).forEach(p=>{
+    if(p.me)return;
+    humans.push({id:p.id,name:p.name,cls:p.cls,hp:p.hp,max:p.max,away:!!p.away});
+  });
+  enterDeep(L.cls,[],{
+    depth:(st&&st.depth)||L.depth||1,
+    seed:(st&&st.seed)||L.seed,
+    theme:(st&&st.theme)||L.theme,
+    mood:(st&&st.mood)||L.mood,
+    shared:L.id,
+  });
+  humans.forEach(h=>{
+    S.dg.party.push({id:h.id,name:h.name,cls:h.cls,hp:h.hp,max:h.max,
+      you:false,human:true,away:h.away,faints:0,rank:0,x:0,y:0,cool:0});
+  });
+  S.dg.host=!!L.host;
+  if(L.host)NET.delveMove(L.id,S.dg.rx,S.dg.ry,'down');
+  S.lobby=null;
+  close();paused=false;
+  toast(humans.length?('Down with '+humans.map(h=>h.name).join(', ')+'.')
+                     :'Down on your own, then.',4500);
+  startDelveSync();
+}
+function startDelveSync(){
+  stopDelveSync();
+  if(!S.dg||!S.dg.shared)return;
+  delveTimer=setInterval(async()=>{
+    const D=S.dg;
+    if(!D||!D.shared){stopDelveSync();return;}
+    const me=D.party.find(p=>p.you);
+    await NET.delveBeat(D.shared,me?Math.round(me.hp):null);
+    const st=await NET.delveState(D.shared);
+    if(!st||st.error)return;
+    ((st.party)||[]).forEach(p=>{
+      if(p.me)return;
+      const mine=D.party.find(x=>x.id===p.id);
+      if(mine){mine.hp=p.hp;mine.max=p.max;mine.away=!!p.away;}
+    });
+    if(!D.host&&(st.roomX!==D.rx||st.roomY!==D.ry)){
+      D.rx=st.roomX;D.ry=st.roomY;
+      const r=roomAt(D.rx,D.ry);
+      if(r){fillRoom(r,D.depth);r.seen=true;
+        D.px=(DW/2)*TILE;D.py=(DH-3)*TILE;}
+    }
+    if(st.state==='done'&&!D.host){
+      toast('They have climbed out. So do you.',4000);
+      stopDelveSync();dgLeave(false);
+    }
+  },2000);
+}
+function openSoloDoor(){
   paused=true;
   const grown=FOLK.filter(f=>!f.child&&f.id!==S.claimed);
   OR('<h3>A door in the trees</h3>'
@@ -5285,6 +5498,19 @@ const FOE_ART={
   brute:{n:'brute',    hp:22, dmg:9, sp:26, col:'#8C5A42',size:22},
   boss :{n:'the thing at the bottom',hp:60,dmg:12,sp:24,col:'#8C2F3A',size:30},
 };
+
+/* ---- a level everybody can walk, from one number ---- */
+let RNG=Math.random;
+function seededRandom(seed){
+  let s=(seed>>>0)||1;
+  return function(){
+    s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;
+    return (s>>>0)/4294967296;
+  };
+}
+function useSeed(seed){RNG=seededRandom(seed);}
+function useChance(){RNG=Math.random;}
+function rnd(){return RNG();}
 function dgOn(){return !!(S.dg&&S.dg.on);}
 function dgKey(x,y){return x+','+y;}
 function roomAt(x,y){return S.dg&&S.dg.rooms[dgKey(x,y)];}
@@ -5295,7 +5521,7 @@ function makeDungeon(depth){
   const path=[[cx,cy]];
   rooms[dgKey(cx,cy)]={x:cx,y:cy,kind:'start',doors:{},cleared:true,seen:true};
   for(let i=0;i<w+h+2;i++){
-    const d=[[1,0],[1,0],[0,1],[0,-1]][Math.floor(Math.random()*4)];
+    const d=[[1,0],[1,0],[0,1],[0,-1]][Math.floor(rnd()*4)];
     const nx=Math.max(0,Math.min(w-1,cx+d[0])), ny=Math.max(0,Math.min(h-1,cy+d[1]));
     if(nx===cx&&ny===cy)continue;
     if(!rooms[dgKey(nx,ny)])rooms[dgKey(nx,ny)]={x:nx,y:ny,kind:'fight',doors:{},cleared:false};
@@ -5310,7 +5536,7 @@ function makeDungeon(depth){
   rooms[dgKey(best[0],best[1])].kind='boss';
   Object.values(rooms).forEach(r=>{
     if(r.kind!=='fight')return;
-    const roll=Math.random();
+    const roll=rnd();
     r.kind=roll<0.26?'treasure':(roll<0.36?'rest':(roll<0.46?'shrine':'fight'));
   });
   return {rooms,w,h,start:[0,Math.floor(h/2)]};
@@ -5323,14 +5549,14 @@ function fillRoom(r,depth){
   const pool=['rat','bat','slime','gob','brute'].slice(0,2+tier);
   const md=(typeof moodNow==='function')?moodNow():{foes:0,find:0};
   if(r.kind==='fight'){
-    const n=Math.max(1,2+Math.floor(Math.random()*(2+tier))+(md.foes||0));
+    const n=Math.max(1,2+Math.floor(rnd()*(2+tier))+(md.foes||0));
     for(let i=0;i<n;i++){
-      const k=pool[Math.floor(Math.random()*pool.length)];
+      const k=pool[Math.floor(rnd()*pool.length)];
       const A=FOE_ART[k];
       const sc=depthScale(depth);
       const hpv=Math.round((A.hp+depth*2)*sc.hp);
       r.foes.push({k,hp:hpv,max:hpv,
-        x:(2+Math.random()*(DW-4))*TILE,y:(2+Math.random()*(DH-4))*TILE,hurt:0,knock:0});
+        x:(2+rnd()*(DW-4))*TILE,y:(2+rnd()*(DH-4))*TILE,hurt:0,knock:0});
     }
   }else if(r.kind==='boss'){
     const A=FOE_ART.boss;
@@ -5338,31 +5564,35 @@ function fillRoom(r,depth){
       x:(DW/2)*TILE,y:(DH/2-1)*TILE,hurt:0,knock:0});
   }else if(r.kind==='treasure'){
     r.chest={x:Math.floor(DW/2)*TILE,y:Math.floor(DH/2)*TILE,open:false,
-             locked:Math.random()<0.4, trapped:Math.random()<0.35};
+             locked:rnd()<0.4, trapped:rnd()<0.35};
   }else if(r.kind==='shrine'){
     r.shrine={x:Math.floor(DW/2)*TILE,y:4*TILE,used:false};
   }else if(r.kind==='rest'){
     r.fire={x:Math.floor(DW/2)*TILE,y:Math.floor(DH/2)*TILE,used:false};
   }
   /* a trap, hidden until somebody spots it */
-  if(r.kind!=='start'&&Math.random()<0.62+((md.find||0)*0.06)){
-    const T2=SNARES[Math.floor(Math.random()*SNARES.length)];
-    r.trap={id:T2.id,x:(3+Math.random()*(DW-6))*TILE,y:(3+Math.random()*(DH-6))*TILE,
+  if(r.kind!=='start'&&rnd()<0.62+((md.find||0)*0.06)){
+    const T2=SNARES[Math.floor(rnd()*SNARES.length)];
+    r.trap={id:T2.id,x:(3+rnd()*(DW-6))*TILE,y:(3+rnd()*(DH-6))*TILE,
             found:false,sprung:false};
   }
   /* something hidden, if anybody thinks to look */
-  if(Math.random()<0.55+((md.find||0)*0.08)){
-    r.hidden={x:(2+Math.random()*(DW-4))*TILE,y:(2+Math.random()*(DH-4))*TILE,found:false,taken:false};
+  if(rnd()<0.55+((md.find||0)*0.08)){
+    r.hidden={x:(2+rnd()*(DW-4))*TILE,y:(2+rnd()*(DH-4))*TILE,found:false,taken:false};
   }
-  const props=2+Math.floor(Math.random()*4);
+  const props=2+Math.floor(rnd()*4);
   for(let i=0;i<props;i++)
-    r.props.push({x:1+Math.floor(Math.random()*(DW-2)),y:1+Math.floor(Math.random()*(DH-2)),
-      t:['rubble','pot','pillar','bones'][Math.floor(Math.random()*4)]});
+    r.props.push({x:1+Math.floor(rnd()*(DW-2)),y:1+Math.floor(rnd()*(DH-2)),
+      t:['rubble','pot','pillar','bones'][Math.floor(rnd()*4)]});
 }
-function enterDeep(cls,mates){
-  const depth=(S.dgDepth||0)+1;
+function enterDeep(cls,mates,opts){
+  opts=opts||{};
+  const depth=opts.depth||((S.dgDepth||0)+1);
+  const seed=opts.seed||Math.floor(Math.random()*2000000000);
+  useSeed(seed);                    /* everybody with this number walks this level */
   const dun=makeDungeon(depth);
-  const theme=DEPTHS[Math.floor(Math.random()*DEPTHS.length)];
+  const theme=opts.theme?(DEPTHS.find(d=>d.id===opts.theme)||DEPTHS[0])
+                        :DEPTHS[Math.floor(rnd()*DEPTHS.length)];
   const me=(typeof meFolk==='function')&&meFolk();
   const kitBoost=hasGear('kit')?4:0;
   const party=[{id:S.claimed||'me',name:me?firstName(me.name):(S.player.name||'you'),
@@ -5397,8 +5627,11 @@ function enterDeep(cls,mates){
     Object.values(S.dg.rooms).forEach(r=>{r.mapped=true;});
   }
   S.dg.knacks={};
-  S.dg.mood=MOODS[Math.floor(Math.random()*MOODS.length)].id;
+  S.dg.seed=seed;
+  S.dg.mood=opts.mood||MOODS[Math.floor(rnd()*MOODS.length)].id;
+  S.dg.shared=opts.shared||null;      /* the delve id, when friends are coming */
   fillRoom(roomAt(S.dg.rx,S.dg.ry),depth);
+  useChance();                        /* the level is laid out; the rest is luck */
   S.scene='deep';paused=false;close();
   const md=moodNow();
   if(md.curse&&!S.dg.curse&&HEXES.length){
@@ -5425,6 +5658,9 @@ function dgBlocked(px,py){
 }
 function dgGo(dx,dy){
   const D=S.dg;
+  if(D.shared&&!D.host){toast('Wait for the others.');return;}
+  /* in a shared delve only the host decides where the party goes */
+  if(D.shared&&!D.host){toast('Wait for the others.');return;}
   D.rx+=dx;D.ry+=dy;
   const r=roomAt(D.rx,D.ry);
   if(!r){D.rx-=dx;D.ry-=dy;return;}
@@ -5434,6 +5670,8 @@ function dgGo(dx,dy){
   if(dy===1)D.py=TILE*1.6;
   if(dy===-1)D.py=(DH-2.6)*TILE;
   D.party.forEach(p=>{if(!p.you){p.x=D.px;p.y=D.py;}});
+  if(D.shared&&D.host&&typeof NET!=='undefined')NET.delveMove(D.shared,D.rx,D.ry,null);
+  if(D.shared&&D.host)NET.delveMove(D.shared,D.rx,D.ry,null);
   save();
 }
 function dgMove(dt){
@@ -5486,7 +5724,7 @@ function dgMove(dt){
     D.px=Math.max(TILE,Math.min((DW-2)*TILE,D.px));
     D.py=Math.max(TILE,Math.min((DH-2)*TILE,D.py));
   }
-  D.party.filter(p=>!p.you&&p.hp>0).forEach((p,i)=>{
+  D.party.filter(p=>!p.you&&p.hp>0&&(!p.human||p.away)).forEach((p,i)=>{
     const tgt={x:D.px-((i+1)*22)*Math.cos(i),y:D.py+((i%2)?18:-18)};
     p.x=p.x||D.px;p.y=p.y||D.py;
     const dx=tgt.x-p.x,dy=tgt.y-p.y,d=Math.hypot(dx,dy);
@@ -5575,6 +5813,8 @@ function dgDown(){
 }
 async function dgLeave(wiped){
   const D=S.dg;if(!D)return;
+  stopDelveSync();
+  if(D.shared&&D.host&&typeof NET!=='undefined')NET.delveMove(D.shared,D.rx,D.ry,'done');
   const mine={},shares={};
   Object.keys(D.loot).forEach(k=>{
     const total=D.loot[k];
