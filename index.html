@@ -424,7 +424,7 @@ function newGame(){
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
     delve:null, reports:[], stock:{}, inside:null, room:'main', ipx:0, ipy:0, gear:{}, said:[],
-    relics:[], worn:{},
+    relics:[], worn:{}, bonds:{}, bestiary:{},
     weather:'fair', festDone:{}, festCatch:{},
     deck:null, cards:null, bones:null, stones:null, match:null,
     fish:null, hunt:null, myStuff:{}, carrying:null, fish:null, hunt:null,
@@ -445,6 +445,7 @@ async function load(){
       S.myStuff=S.myStuff||{};S.room=S.room||'main';S.carrying=S.carrying||null;
       S.gear=S.gear||{};S.said=S.said||[];S.weather=S.weather||'fair';
       S.relics=S.relics||[];S.worn=S.worn||{};S.stamMax=S.stamMax||STAMINA;
+      S.bonds=S.bonds||{};S.bestiary=S.bestiary||{};
       S.festDone=S.festDone||{};S.festCatch=S.festCatch||{};
       S.deck=S.deck||starterDeck();
       S.cards=null;S.bones=null;S.stones=null;S.match=null;
@@ -2242,6 +2243,10 @@ window.addEventListener('keydown',e=>{
     }
     if(k==='q'){e.preventDefault();dgLeave(false);return;}
     if(k==='r'){e.preventDefault();dgSearch();return;}
+    if(k==='1'){e.preventDefault();useKnack('ranger');return;}
+    if(k==='2'){e.preventDefault();useKnack('mage');return;}
+    if(k==='3'){e.preventDefault();useKnack('fighter');return;}
+    if(k==='4'){e.preventDefault();useKnack('healer');return;}
   }
   keys[e.key.toLowerCase()]=true;
   if(!paused){
@@ -3220,6 +3225,174 @@ function openKitBag(){
     S.worn[r.slot]=r.id;SFX.ok();await save();openKitBag();
   });
   document.getElementById('closeB').onclick=close;
+}
+
+/* ============================================================
+   WHAT EACH OF THEM IS FOR — one knack per class, used down there.
+   ============================================================ */
+const KNACKS={
+  ranger :{n:'Read the ground', key:'1', uses:3, stat:'wits',
+    t:'Finds what is hidden and what is meant to hurt you.',
+    say:'{who} crouches, reads the dust, and points at three things at once.'},
+  mage   :{n:'Ask the dark',    key:'2', uses:3, stat:'heart',
+    t:'Names the curse, and sometimes talks it out of the room.',
+    say:'{who} says something under their breath and the air changes its mind.'},
+  fighter:{n:'Put a shoulder to it', key:'3', uses:3, stat:'back',
+    t:'Opens what is stuck. Breaks what is locked.',
+    say:'{who} braces, counts to three, and the door stops arguing.'},
+  healer :{n:'Field dressing',  key:'4', uses:3, stat:'hands',
+    t:'Patches the party between fights, without a fight.',
+    say:'{who} works round everybody with cloth and sage and a low running commentary.'},
+};
+function partyHas(cls){
+  const D=S.dg;if(!D)return null;
+  return D.party.find(p=>p.cls===cls&&p.hp>0&&!p.down)||null;
+}
+function knackLeft(cls){
+  const D=S.dg;if(!D)return 0;
+  D.knacks=D.knacks||{};
+  if(D.knacks[cls]===undefined)D.knacks[cls]=KNACKS[cls].uses;
+  return D.knacks[cls];
+}
+function useKnack(cls){
+  const D=S.dg;if(!D)return;
+  const K=KNACKS[cls];if(!K)return;
+  const who=partyHas(cls);
+  if(!who){toast('Nobody with you can do that.');SFX.no();return;}
+  if(knackLeft(cls)<=0){toast(who.name+' has nothing left for that today.');SFX.no();return;}
+  const r=roomAt(D.rx,D.ry);if(!r)return;
+  D.knacks[cls]--;
+  SFX.ok();
+  const said=K.say.split('{who}').join(who.name);
+  if(cls==='ranger'){
+    /* everything in this room, found at once */
+    const bits=[];
+    if(r.trap&&!r.trap.found){r.trap.found=true;
+      bits.push(((SNARES.find(t=>t.id===r.trap.id)||{}).n||'a trap'));}
+    if(r.hidden&&!r.hidden.found){r.hidden.found=true;bits.push('a loose stone with something behind it');}
+    if(r.chest&&r.chest.trapped){bits.push('a wire on the chest lid');}
+    r.searched=true;
+    toast(said+(bits.length?('  Found: '+bits.join(', ')+'.'):'  There is nothing in here but dust.'),5500);
+  }else if(cls==='mage'){
+    if(D.curse){
+      const c=rollCheck('curse',12);
+      D.lastCheck=dgCheckLine(c,12);
+      if(c.pass){toast(said+'  '+D.curseName+' lifts.',5500);D.curse=null;D.curseName='';}
+      else toast(said+'  '+D.curseName+' stays where it is. ('+c.roll+')',5000);
+    }else{
+      /* no curse to break — read the level instead */
+      Object.values(D.rooms).forEach(rm=>{rm.mapped=true;});
+      toast(said+'  The shape of the level settles in everybody\u2019s head.',5000);
+    }
+  }else if(cls==='fighter'){
+    if(r.chest&&r.chest.locked){
+      r.chest.locked=false;
+      toast(said+'  The chest is open.',5000);
+    }else if(r.trap&&r.trap.found&&!r.trap.sprung){
+      r.trap.sprung=true;
+      toast(said+'  The trap is broken before it can go off.',5000);
+    }else{
+      /* nothing to force — put the frighteners on instead */
+      r.foes.forEach(f=>{if(f.hp>0){f.hp=Math.max(1,f.hp-3);f.hurt=0.3;}});
+      toast(said+'  Everything in here thinks better of itself.',5000);
+    }
+  }else if(cls==='healer'){
+    let n=0;
+    D.party.forEach(p=>{
+      if(p.hp<=0)return;
+      const before=p.hp;
+      p.hp=Math.min(p.max,p.hp+6);
+      if(p.hp>before)n++;
+    });
+    const down=D.party.find(p=>p.down&&p.hp<=0);
+    if(down){down.hp=Math.ceil(down.max*0.3);down.down=false;n++;}
+    toast(said+'  '+(n?(n+' patched up.'):'Nobody needed it.'),5000);
+  }
+  save();
+}
+function knackBar(){
+  const D=S.dg;if(!D)return '';
+  return Object.keys(KNACKS).filter(c=>partyHas(c)).map(c=>{
+    const K=KNACKS[c];
+    return K.key+' '+K.n+' ('+knackLeft(c)+')';
+  }).join('   ·   ');
+}
+
+/* ============================================================
+   REASONS TO GO BACK — the deep is not the same twice.
+   ============================================================ */
+/* 1. moods: every descent the place is up to something different */
+const MOODS=[
+  {id:'quiet',  n:'Quiet',            t:'Nothing much stirring. Good for looking about.',
+   foes:-1, loot:0,  find:2},
+  {id:'restless',n:'Restless',        t:'Something has them all awake.',
+   foes:2,  loot:1,  find:0},
+  {id:'rich',   n:'Rich ground',      t:'The walls are full of something worth having.',
+   foes:0,  loot:2,  find:1},
+  {id:'flooded',n:'Running with water',t:'Cold to the knee, and everything is slower.',
+   foes:0,  loot:1,  find:1, slow:true},
+  {id:'old',    n:'Very old air',     t:'Nobody has been down here in a long while.',
+   foes:1,  loot:2,  find:2},
+  {id:'watched',n:'Watched',          t:'You are not alone in the way you usually are not alone.',
+   foes:1,  loot:1,  find:0, curse:true},
+  {id:'thin',   n:'Thin walls',       t:'You can hear the next room, and it can hear you.',
+   foes:1,  loot:0,  find:1, loud:true},
+];
+function moodNow(){
+  const D=S.dg;if(!D)return MOODS[0];
+  return MOODS.find(m=>m.id===D.mood)||MOODS[0];
+}
+/* 2. the party learns. companions who come with you get better at it. */
+function bondOf(id){S.bonds=S.bonds||{};return S.bonds[id]||{runs:0,rank:0};}
+function bondRank(id){
+  const b=bondOf(id);
+  return Math.min(5,Math.floor(b.runs/3));
+}
+const BOND_NAMES=['','been down once or twice','knows the way','steady in the dark','you trust them','you would not go without them'];
+function bondUp(ids,depth){
+  S.bonds=S.bonds||{};
+  ids.forEach(id=>{
+    const b=S.bonds[id]||{runs:0,deepest:0};
+    b.runs=(b.runs||0)+1;
+    b.deepest=Math.max(b.deepest||0,depth);
+    S.bonds[id]=b;
+  });
+}
+/* 3. a bestiary that fills in as you meet things */
+function metFoe(k){
+  S.bestiary=S.bestiary||{};
+  S.bestiary[k]=(S.bestiary[k]||0)+1;
+}
+function openBestiary(){
+  paused=true;
+  S.bestiary=S.bestiary||{};
+  const rows=Object.keys(FOE_ART).map(k=>{
+    const seen=S.bestiary[k]||0;
+    const A=FOE_ART[k];
+    if(!seen)return '<div class="row" style="opacity:.4;"><div><strong>?</strong>'
+      +'<div class="hint">not met yet</div></div></div>';
+    return '<div class="row"><div style="min-width:0;"><strong>'+A.n+'</strong>'
+      +'<div class="hint">'+A.hp+' hardy · hits for '+A.dmg+'</div>'
+      +'<div class="hint">'+(seen>=12?'You could fight one in your sleep.'
+        :seen>=5?'You know how it moves.'
+        :'You have met '+seen+'.')+'</div></div>'
+      +'<span class="hint">'+seen+'</span></div>';
+  }).join('');
+  const deepest=S.dgDepth||0;
+  OR('<h3>What lives down there</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Deepest you have been: '
+    +(deepest?('level '+deepest):'not yet')+'.</div>'
+    +rows
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.getElementById('closeB').onclick=close;
+}
+/* 4. the further down you go, the more it asks of you */
+function depthScale(depth){
+  return {
+    hp:  1+Math.min(2.2,(depth-1)*0.28),
+    dmg: 1+Math.min(1.8,(depth-1)*0.16),
+    loot:1+Math.min(2.5,(depth-1)*0.30),
+  };
 }
 /* ---- kit you carry down, and keep ---- */
 const DELVE_GEAR=[
@@ -4523,6 +4696,7 @@ function classSkill(cls){
 }
 function liveFoes(){return S.battle?S.battle.foes.filter(f=>f.hp>0):[];}
 function startBattle(foes){
+  (foes||[]).forEach(f=>metFoe(f.k));
   const D=S.dg;if(!D)return;
   S.battle={
     foes:foes.map(f=>({ref:f,k:f.k,hp:f.hp,max:f.max,guard:0})),
@@ -5147,12 +5321,15 @@ function fillRoom(r,depth){
   const tier=Math.min(4,Math.floor(depth/2));
   const dp=depthOf();
   const pool=['rat','bat','slime','gob','brute'].slice(0,2+tier);
+  const md=(typeof moodNow==='function')?moodNow():{foes:0,find:0};
   if(r.kind==='fight'){
-    const n=2+Math.floor(Math.random()*(2+tier));
+    const n=Math.max(1,2+Math.floor(Math.random()*(2+tier))+(md.foes||0));
     for(let i=0;i<n;i++){
       const k=pool[Math.floor(Math.random()*pool.length)];
       const A=FOE_ART[k];
-      r.foes.push({k,hp:A.hp+depth*2,max:A.hp+depth*2,
+      const sc=depthScale(depth);
+      const hpv=Math.round((A.hp+depth*2)*sc.hp);
+      r.foes.push({k,hp:hpv,max:hpv,
         x:(2+Math.random()*(DW-4))*TILE,y:(2+Math.random()*(DH-4))*TILE,hurt:0,knock:0});
     }
   }else if(r.kind==='boss'){
@@ -5168,13 +5345,13 @@ function fillRoom(r,depth){
     r.fire={x:Math.floor(DW/2)*TILE,y:Math.floor(DH/2)*TILE,used:false};
   }
   /* a trap, hidden until somebody spots it */
-  if(r.kind!=='start'&&Math.random()<0.62){
+  if(r.kind!=='start'&&Math.random()<0.62+((md.find||0)*0.06)){
     const T2=SNARES[Math.floor(Math.random()*SNARES.length)];
     r.trap={id:T2.id,x:(3+Math.random()*(DW-6))*TILE,y:(3+Math.random()*(DH-6))*TILE,
             found:false,sprung:false};
   }
   /* something hidden, if anybody thinks to look */
-  if(Math.random()<0.55){
+  if(Math.random()<0.55+((md.find||0)*0.08)){
     r.hidden={x:(2+Math.random()*(DW-4))*TILE,y:(2+Math.random()*(DH-4))*TILE,found:false,taken:false};
   }
   const props=2+Math.floor(Math.random()*4);
@@ -5194,7 +5371,10 @@ function enterDeep(cls,mates){
   (mates||[]).forEach((id,i)=>{
     const f=FOLK.find(x=>x.id===id);if(!f)return;
     const c=spare[i%spare.length];
-    party.push({id,name:firstName(f.name),cls:c.id,hp:c.hp,max:c.hp,you:false,faints:0,x:0,y:0,cool:0});
+    /* somebody who has been down with you before is harder to put down */
+    const rank=bondRank(id);
+    const hp=c.hp+rank*3;
+    party.push({id,name:firstName(f.name),cls:c.id,hp,max:hp,you:false,faints:0,rank,x:0,y:0,cool:0});
   });
   S.dg={on:true,depth,theme:theme.id,seed:Math.floor(Math.random()*99999),
         rooms:dun.rooms,w:dun.w,h:dun.h,rx:dun.start[0],ry:dun.start[1],
@@ -5216,11 +5396,18 @@ function enterDeep(cls,mates){
   if(hasGear('chalk')){
     Object.values(S.dg.rooms).forEach(r=>{r.mapped=true;});
   }
+  S.dg.knacks={};
+  S.dg.mood=MOODS[Math.floor(Math.random()*MOODS.length)].id;
   fillRoom(roomAt(S.dg.rx,S.dg.ry),depth);
   S.scene='deep';paused=false;close();
-  if(S.dg.curse)toast(S.dg.curseName+'. '+S.dg.curseText);
-  else if(S.dg.curseShrugged)toast(S.dg.curseShrugged);
-  else toast('Down into '+theme.name+'. '+theme.blurb);
+  const md=moodNow();
+  if(md.curse&&!S.dg.curse&&HEXES.length){
+    const hex=HEXES[Math.floor(Math.random()*HEXES.length)];
+    S.dg.curse=hex.id;S.dg.curseName=hex.n;S.dg.curseText=hex.t;
+  }
+  toast(theme.name+' — '+md.n+'. '+md.t,5500);
+  if(S.dg.curse)setTimeout(()=>toast(S.dg.curseName+'. '+S.dg.curseText,5000),2500);
+
   save();
 }
 function dgBlocked(px,py){
@@ -5412,7 +5599,8 @@ async function dgLeave(wiped){
         for(const [item,n] of Object.entries(got)){if(n>0)await NET.gift(g.id,item,n,'from the deep');}}
     }
   }
-  if(D.bossDown)S.dgDepth=D.depth;
+  if(D.bossDown)S.dgDepth=Math.max(S.dgDepth||0,D.depth);
+  bondUp(D.party.filter(p=>!p.you).map(p=>p.id),D.depth);
   const rows=Object.keys(mine).filter(k=>mine[k]>0)
     .map(k=>'<div class="row"><div><strong>'+esc(k)+'</strong></div><span class="hint">+'+mine[k]+'</span></div>').join('')
     ||'<div class="hint">Nothing but a story.</div>';
@@ -5586,7 +5774,8 @@ function drawDeep(){
   const hp=me2.hp,mxh=me2.max;
   ctx.fillStyle='rgba(10,9,8,0.8)';ctx.fillRect(10,10,200,62);
   ctx.fillStyle='rgba(237,230,214,0.9)';ctx.font='11px Inter';ctx.textAlign='left';
-  ctx.fillText('LEVEL '+D.depth+' · '+(depthOf().name||'').replace(/^the /,''),18,26);
+  ctx.fillText('LEVEL '+D.depth+' · '+(depthOf().name||'').replace(/^the /,'')
+    +'  ·  '+moodNow().n,18,26);
   ctx.fillStyle='rgba(255,255,255,0.16)';ctx.fillRect(18,32,170,10);
   ctx.fillStyle=hp/mxh<0.3?'#C4493C':'#6FA85C';ctx.fillRect(18,32,170*Math.max(0,hp/mxh),10);
   ctx.fillStyle='rgba(237,230,214,0.6)';ctx.font='10px Inter';
@@ -5614,7 +5803,16 @@ function drawDeep(){
     if(r.hidden&&r.hidden.found&&!r.hidden.taken)bits.push('something behind the stone');
     if(r.trap&&r.trap.found&&!r.trap.sprung)bits.push('mind the trap');
     bits.push('Q to climb out');
-    ctx.fillText(bits.join('  \u00b7  '),cw/2,ch-16);}
+    ctx.fillText(bits.join('  \u00b7  '),cw/2,ch-16);
+  }
+  {
+    const kb=knackBar();
+    if(kb){
+      ctx.font='11px Inter';ctx.textAlign='center';
+      ctx.fillStyle='rgba(224,166,61,0.75)';
+      ctx.fillText(kb,cw/2,ch-34);
+    }
+  }
 }
 /* ============================================================
    BUILDING OUT — rooms grow, and there is a stair.
@@ -7598,16 +7796,21 @@ function openValley(){
   }
   if(!NET.ready()){
     OR('<h3>Playing with friends</h3>'
-      +'<p class="sub">Start a valley and share the code, or type the code a friend sent you. No sign-up, no password.</p>'
-      +'<div class="card"><strong>Start a new valley</strong>'
+      +'<p class="sub">Give the valley you are already in a code, and friends can come to it. '
+      +'Or type the code somebody sent you and go to theirs. No sign-up, no password.</p>'
+      +'<div class="card"><strong>Open your valley</strong>'
+      +'<div class="hint" style="margin-bottom:8px;">'
+      +'<strong>Your farm, your house and everything in your basket stay exactly as they are</strong> — '
+      +'this only gives the place a name so people can find it.</div>'
       +'<div class="hint" style="margin-bottom:8px;">Name it yourself so it is easy to pass on — or leave it blank and take one at random.</div>'
       +'<input type="text" id="own" maxlength="24" placeholder="FAIRCHILD-FARM" autocapitalize="characters" '
       +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);'
       +'padding:10px 12px;border-radius:4px;font-size:15px;letter-spacing:.06em;font-family:IBM Plex Mono,monospace;margin-bottom:6px;"/>'
       +'<div class="hint" id="chk" style="min-height:16px;margin-bottom:6px;"></div>'
-      +'<button class="primary" id="mk">Make a valley</button></div>'
-      +'<div class="card" style="margin-top:10px;"><strong>Join one</strong>'
-      +'<div class="hint" style="margin-bottom:8px;">Type the code exactly as it was sent.</div>'
+      +'<button class="primary" id="mk">Open it up</button></div>'
+      +'<div class="card" style="margin-top:10px;"><strong>Go to somebody else\'s</strong>'
+      +'<div class="hint" style="margin-bottom:8px;">Type the code exactly as it was sent. '
+      +'You keep your own farm — you are simply sharing their valley as well.</div>'
       +'<input type="text" id="cd" placeholder="HOLLOW-4b2" autocapitalize="characters" '
       +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);color:var(--parchment);'
       +'padding:11px 12px;border-radius:4px;font-size:17px;letter-spacing:.08em;font-family:IBM Plex Mono,monospace;"/>'
@@ -7738,6 +7941,11 @@ function openMenu(){
       +'<div class="hint">'+standingWord()+'</div>'
       +(nextMark()?('<div class="hint">Next: '+esc(nextMark().n)+'</div>'):'')
       +'</div><button id="standB">Look</button></div>'
+    +'<div class="row"><div style="min-width:0;"><strong>The deep</strong>'
+      +'<div class="hint">'+((S.dgDepth||0)?('You have been as far as level '+S.dgDepth+'.'):'You have not been down yet.')+'</div>'
+      +'<div class="hint">'+Object.keys(S.bestiary||{}).length+' kinds met'
+      +((S.relics||[]).length?(' · '+S.relics.length+' things brought back'):'')+'</div>'
+      +'</div><button id="bestB">What lives there</button></div>'
     +(festivalToday()
       ?('<div class="row"><div style="min-width:0;"><strong>'+esc(festivalToday().n)+'</strong>'
         +'<div class="hint">Today. Everybody is out for it.</div></div>'
@@ -7767,6 +7975,7 @@ function openMenu(){
     else{this.dataset.c='1';this.innerText='Tap again — this clears the farm';}
   };
   const sb=document.getElementById('standB');if(sb)sb.onclick=openStanding;
+  const bb=document.getElementById('bestB');if(bb)bb.onclick=openBestiary;
   const fb=document.getElementById('festB');if(fb)fb.onclick=()=>openFestival();
   document.getElementById('closeB').onclick=close;
 }
