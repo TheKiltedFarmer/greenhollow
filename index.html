@@ -179,7 +179,7 @@ const BLD={
   kitchen :{x:64,y:30,w:6,h:3,label:'The Long Kitchen',wall:'#6B4A32',roof:'#E0A63D',roof2:'#C9944E'},
   supply  :{x:54,y:34,w:5,h:3,label:'The Supply House',wall:'#57504A',roof:'#8C6A9C',roof2:'#7A5C88'},
   forge   :{x:64,y:40,w:5,h:3,label:'Sana & Andrew\'s',wall:'#5A5248',roof:'#8C5A4A',roof2:'#7A4E40'},
-  hives   :{x:74,y:24,w:5,h:3,label:'The Hives',      wall:'#5E5A44',roof:'#C9A44E',roof2:'#B08F3C'},
+  hives   :{x:74,y:24,w:5,h:3,label:'The Hives',      wall:'#5E5A44',roof:'#C9A44E',roof2:'#B08F3C',apiary:true},
   hall    :{x:60,y:48,w:7,h:4,label:'The Commons Hall',wall:'#4E4638',roof:'#5B7A8C',roof2:'#4E6A7A'},
   c1:{x:46,y:18,w:5,h:3,label:'',wall:'#6B5442',roof:'#8C5A44',roof2:'#784C3A',cot:true},
   c2:{x:53,y:18,w:4,h:3,label:'',wall:'#4E5A46',roof:'#5E7456',roof2:'#52664C',cot:true},
@@ -424,10 +424,12 @@ function newGame(){
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
     delve:null, reports:[], stock:{}, inside:null, room:'main', ipx:0, ipy:0, gear:{}, said:[],
-    relics:[], worn:{}, bonds:{}, bestiary:{}, lobby:null, lobby:null,
+    taughtCards:false, carryDye:null, finish:{}, chests:{},
+    relics:[], worn:{}, bonds:{}, bestiary:{}, lobby:null, arcDone:{},
+    story:{arc:null,answers:[],seen:[],day0:1}, lobby:null,
     weather:'fair', festDone:{}, festCatch:{},
     deck:null, cards:null, bones:null, stones:null, match:null,
-    fish:null, hunt:null, myStuff:{}, carrying:null, fish:null, hunt:null,
+    fish:null, hunt:null, myStuff:{}, carrying:null,
     farm:{},bag:[{item:'Turnip seeds',n:6},{item:'Carrot seeds',n:4},{item:'Wood',n:8},{item:'Stone',n:4},{item:'Fibre',n:4}],
     nodes:null,built:[],placing:null,
     tool:0,cans:0,kit:{hoe:0,axe:0,pick:0,can:0},folk,standing:0,needs:[],needsDay:0,shared:[],
@@ -443,9 +445,18 @@ async function load(){
       S.kit=S.kit||{hoe:0,axe:0,pick:0,can:0};
       if(S.inside===undefined)S.inside=null;
       S.myStuff=S.myStuff||{};S.room=S.room||'main';S.carrying=S.carrying||null;
+      S.finish=S.finish||{};S.chests=S.chests||{};
+      /* older saves could stash things under an empty room — clear those out */
+      ['myStuff','finish','chests'].forEach(k=>{
+        if(!S[k])return;
+        Object.keys(S[k]).forEach(kk=>{
+          if(kk===''||kk==='null'||kk.indexOf('null')===0||kk.indexOf('undefined')===0)delete S[k][kk];
+        });
+      });
       S.gear=S.gear||{};S.said=S.said||[];S.weather=S.weather||'fair';
       S.relics=S.relics||[];S.worn=S.worn||{};S.stamMax=S.stamMax||STAMINA;
-      S.bonds=S.bonds||{};S.bestiary=S.bestiary||{};S.lobby=null;S.lobby=null;
+      S.bonds=S.bonds||{};S.bestiary=S.bestiary||{};S.lobby=null;
+      S.story=S.story||{arc:null,answers:[],seen:[],day0:1};S.arcDone=S.arcDone||{};S.lobby=null;
       S.festDone=S.festDone||{};S.festCatch=S.festCatch||{};
       S.deck=S.deck||starterDeck();
       S.cards=null;S.bones=null;S.stones=null;S.match=null;
@@ -494,9 +505,26 @@ const NET={
       try{localStorage.setItem('gh-secret',s);}catch(e){}}
     return s;
   },
+  home(){
+    /* what your place looks like, for anybody who comes calling */
+    const out={rooms:{},finish:{},work:{}};
+    const hid=(typeof myHomeId==='function')?myHomeId():'home';
+    ['','bed','up'].forEach(r=>{
+      const k=hid+(r?(':'+r):'');
+      const stuff=(S.myStuff&&S.myStuff[k])||[];
+      if(stuff.length)out.rooms[r||'main']=stuff.slice(0,60);
+      const f=(S.finish&&S.finish[k]);
+      if(f)out.finish[r||'main']=f;
+    });
+    out.work=(S.homeWork&&S.homeWork[hid])||{};
+    out.name=(typeof cottageFamily==='function')?cottageFamily(hid):'';
+    return out;
+  },
   look(){const me=(typeof meFolk==='function')&&meFolk();
-    return me?{pal:me.pal,name:me.name,claimed:me.id,job:careerOf(me.id)}
-             :{skin:S.player.skin,hair:S.player.hair,hairStyle:S.player.hairStyle,top:S.player.top};},
+    const base=me?{pal:me.pal,name:me.name,claimed:me.id,job:careerOf(me.id)}
+                 :{skin:S.player.skin,hair:S.player.hair,hairStyle:S.player.hairStyle,top:S.player.top};
+    try{base.home=this.home();}catch(e){}
+    return base;},
   async checkCode(code){
     if(!this.init())return {ok:false,why:'not configured'};
     const {data,error}=await this.sb.rpc('code_free',{p_code:code});
@@ -702,6 +730,64 @@ function fromMap(rows,pal,scale){
   });
 }
 
+
+/* ---- the hives: boxes on stands, not a house ---- */
+function drawApiary(b,X,Y,W,H){
+  const t=Date.now()/900;
+  /* the ground under them, worn bare */
+  ctx.fillStyle='rgba(120,110,70,0.16)';
+  ctx.fillRect(X-6,Y+6,W+12,H+6);
+  /* a windbreak of shrubs behind */
+  for(let i=0;i<Math.floor(W/22);i++){
+    const bx=X-4+i*22, by=Y-14;
+    ctx.fillStyle='#26401F';
+    ctx.beginPath();ctx.arc(bx+10,by+10,12,0,7);ctx.fill();
+    ctx.fillStyle='#2E4A26';
+    ctx.beginPath();ctx.arc(bx+7,by+7,8,0,7);ctx.fill();
+  }
+  /* four or five hives in a row */
+  const n=Math.max(3,Math.floor(W/34));
+  for(let i=0;i<n;i++){
+    const hx=X+6+i*((W-14)/n), hy=Y+H-34;
+    /* the stand */
+    ctx.fillStyle='#3E3428';ctx.fillRect(hx+2,hy+30,4,8);ctx.fillRect(hx+18,hy+30,4,8);
+    ctx.fillStyle='rgba(0,0,0,0.30)';ctx.fillRect(hx,hy+38,26,4);
+    /* boxes, stacked two or three high */
+    const boxes=2+((i+b.x)%2);
+    for(let k=0;k<boxes;k++){
+      const by=hy+28-k*11;
+      ctx.fillStyle='#171310';ctx.fillRect(hx-1,by-1,26,12);
+      ctx.fillStyle=(k%2)?'#D8C88E':'#C9B478';
+      ctx.fillRect(hx,by,24,10);
+      ctx.fillStyle='rgba(255,255,255,0.18)';ctx.fillRect(hx,by,24,2);
+      ctx.fillStyle='rgba(0,0,0,0.22)';ctx.fillRect(hx,by+8,24,2);
+      /* the frames showing at the joint */
+      ctx.fillStyle='rgba(90,70,40,0.5)';
+      for(let f=0;f<4;f++)ctx.fillRect(hx+3+f*6,by+3,2,4);
+    }
+    /* the lid */
+    const ty=hy+28-boxes*11;
+    ctx.fillStyle='#171310';ctx.fillRect(hx-3,ty-1,30,7);
+    ctx.fillStyle='#8C6A3C';ctx.fillRect(hx-2,ty,28,5);
+    ctx.fillStyle='#A8844A';ctx.fillRect(hx-2,ty,28,2);
+    /* the entrance, and a landing board */
+    ctx.fillStyle='#2A2118';ctx.fillRect(hx+6,hy+34,12,3);
+    ctx.fillStyle='#B89860';ctx.fillRect(hx+2,hy+37,20,2);
+    /* bees going in and out */
+    for(let z=0;z<3;z++){
+      const a=t*1.6+i*2+z*2.1;
+      const bx=hx+12+Math.cos(a)*(14+z*6);
+      const by2=hy+20+Math.sin(a*1.4)*(10+z*4);
+      ctx.fillStyle='rgba(230,200,90,0.85)';
+      ctx.fillRect(bx,by2,2,2);
+    }
+  }
+  /* a smoker left on the ground, because somebody always does */
+  ctx.fillStyle='#5A5148';ctx.fillRect(X+W-14,Y+H-10,7,10);
+  ctx.fillStyle='#3E3830';ctx.fillRect(X+W-15,Y+H-13,9,4);
+  ctx.fillStyle='rgba(200,200,200,0.20)';
+  ctx.fillRect(X+W-12,Y+H-20+Math.sin(t*2)*2,4,7);
+}
 /* ---- people, drawn once per look and cached ---- */
 const PSPR={};
 const BODY_DOWN=[
@@ -1688,8 +1774,22 @@ function skyTint(){
   if(h<20)return'rgba(255,140,60,0.10)';
   return'rgba(30,50,120,0.22)';
 }
+let nameSlots=[];let doingShown=0;
+function placeName(x,y,text){
+  /* nudge a label up until it is not sitting on another one */
+  const w=Math.max(30,text.length*6);
+  let ty=y;
+  for(let tries=0;tries<7;tries++){
+    const clash=nameSlots.some(s=>Math.abs(s.x-x)<(s.w+w)/2&&Math.abs(s.y-ty)<13);
+    if(!clash)break;
+    ty-=13;
+  }
+  nameSlots.push({x,y:ty,w});
+  return ty;
+}
 function draw(){
   resetView();
+  nameSlots=[];doingShown=0;
   ctx.fillStyle='#0A120D';ctx.fillRect(0,0,cw,ch);
   const camX=S.px-cw/(2*scale),camY=S.py-ch/(2*scale);
   ctx.save();ctx.scale(scale,scale);ctx.translate(-Math.round(camX),-Math.round(camY));
@@ -1982,8 +2082,11 @@ function draw(){
     const lit=b.cot?cottageLit(b.id):night;
     ctx.fillStyle='rgba(0,0,0,0.30)';
     ctx.beginPath();ctx.ellipse(X+Wd/2,Y+H+4,Wd*0.52,7,0,0,7);ctx.fill();
-    const sp=buildingSprite(b);
-    ctx.drawImage(sp,X-12,Y-26);
+    if(b.apiary){drawApiary(b,X,Y,Wd,H);}
+    else{
+      const sp=buildingSprite(b);
+      ctx.drawImage(sp,X-12,Y-26);
+    }
     /* windows */
     const win=windowSprite(lit);
     for(let i=0;i<Math.max(1,b.w-2);i++){
@@ -2058,16 +2161,21 @@ function draw(){
       drawPerson(ctx,fx,fy,f.pal,st.step,st.face);
       ctx.restore();
       if(f.pal.critters)drawCritters(ctx,fx,fy,hashStr(f.id));
-      ctx.fillStyle='rgba(237,230,214,0.9)';ctx.font='10px Inter';ctx.textAlign='center';
-      ctx.fillText(f.name.split(' ')[0],fx+16,fy-8);
-      if(Math.hypot(fx-S.px,fy-S.py)<3.2*TILE){
+      ctx.font='10px Inter';ctx.textAlign='center';
+      const nm=f.name.split(' ')[0];
+      const ny=placeName(fx+16,fy-8,nm);
+      ctx.fillStyle='rgba(237,230,214,0.9)';
+      ctx.fillText(nm,fx+16,ny);
+      /* only the nearest few say what they are doing, or it is a wall of text */
+      if(Math.hypot(fx-S.px,fy-S.py)<2.4*TILE&&doingShown<2){
+        doingShown++;
         const cap='· '+folkDoing(f)+' ·';
         ctx.font='9px Inter';
         const w=ctx.measureText(cap).width;
         ctx.fillStyle='rgba(16,26,20,0.82)';
-        ctx.fillRect(fx+16-w/2-4,fy-28,w+8,13);
+        ctx.fillRect(fx+16-w/2-4,ny-20,w+8,13);
         ctx.fillStyle='rgba(237,230,214,0.72)';
-        ctx.fillText(cap,fx+16,fy-19);
+        ctx.fillText(cap,fx+16,ny-11);
       }
     }});
   });
@@ -2141,8 +2249,31 @@ function folkDoing(f){
   const slot=Math.floor((S.min-8*60)/90);
   return jobs[Math.abs(slot+hashStr(f.id))%jobs.length];
 }
+function festSpot(){
+  const f=(typeof festivalToday==="function")?festivalToday():null;
+  if(!f)return null;
+  const h=S.min/60;
+  if(h<8||h>=20)return null;                      /* they still go home at night */
+  /* where the day happens */
+  if(f.id==="catch")  return {x:JETTY.x-2, y:JETTY.y};    /* strung along the river */
+  if(f.id==="sowing"||f.id==="thaw") return {x:FARM.x+10,y:FARM.y+7};  /* out in the rows */
+  return {x:TABLE.x,y:TABLE.y};                   /* otherwise, the green */
+}
 function folkPos(f){
   const h=S.min/60;
+  /* on a festival day the valley turns out, and you can see them do it */
+  {
+    const spot=festSpot();
+    if(spot&&!indoors(f)){
+      const i=FOLK.indexOf(f);
+      const ring=[[0,1],[2,1],[-2,1],[1,2],[-1,2],[3,2],[-3,2],[0,3],[2,3],[-2,3],
+                  [4,2],[-4,2],[1,4],[-1,4],[3,4],[-3,4],[5,3],[-5,3],[0,5],[2,5],
+                  [-2,5],[4,5],[-4,5]];
+      const r=ring[(i<0?0:i)%ring.length];
+      return {x:Math.max(2,Math.min(RIVER_X-2,spot.x+r[0])),
+              y:Math.max(2,Math.min(MH-3,spot.y+r[1]))};
+    }
+  }
   /* children keep to the hall, the lane and their own doorstep */
   if(f.child&&h>=7&&h<18){
     const hb=BLD[homeOf(f)];
@@ -2213,6 +2344,17 @@ window.addEventListener('keydown',e=>{
     if(k==='b'){e.preventDefault();
       if(!canDecorate()){toast('Not your place to alter.');return;}
       openBuildOut();return;}
+    if(k==='v'){e.preventDefault();
+      if(!canDecorate()){toast('Not your place to alter.');return;}
+      openFinishes();return;}
+    if(k==='g'){e.preventDefault();
+      /* lift a chest rather than opening it */
+      const h=nearMyStuff();
+      if(h&&!S.carrying){pickUpStuff();return;}
+      return;}
+    if(k==='c'){e.preventDefault();
+      if(!canDecorate()){toast('Not your place to alter.');return;}
+      repaintStuff();return;}
     if(k==='f'){e.preventDefault();
       if(!canDecorate()){toast('Not your place to rearrange.');return;}
       if(S.carrying){
@@ -6130,20 +6272,59 @@ function openBuildOut(){
 }
 /* ---- furniture you make and place ---- */
 const MAKEABLE=[
-  {t:'chair',    name:'Chair',        cost:{Plank:2},        note:'Somewhere to sit.'},
-  {t:'longtable',name:'Long table',   cost:{Plank:4},        note:'Seats whoever turns up.'},
-  {t:'bench2',   name:'Bench',        cost:{Plank:3},        note:'Cheaper than chairs.'},
-  {t:'dresser',  name:'Dresser',      cost:{Plank:4,Iron:1}, note:'Brass pulls and everything.'},
-  {t:'shelfjars',name:'Jar shelf',    cost:{Plank:3,Clay:2}, note:'Preserves, on show.'},
-  {t:'rug',      name:'Rug',          cost:{Cloth:3},        note:'Warm underfoot. Walk over it.'},
-  {t:'hangherb', name:'Drying herbs', cost:{Sage:2,Rope:1},  note:'Hangs from the beam.'},
-  {t:'hangpots', name:'Pot rail',     cost:{Iron:2},         note:'Everything within reach.'},
-  {t:'barrel',   name:'Barrel',       cost:{Plank:3,Iron:1}, note:'Holds what needs holding.'},
-  {t:'crate',    name:'Crate',        cost:{Plank:2},        note:'Stackable, in theory.'},
-  {t:'bucket',   name:'Bucket',       cost:{Iron:1},         note:'A bucket.'},
+  /* seats and tables */
+  {t:'chair',    name:'Chair',        cost:{Plank:2},            note:'Somewhere to sit.',        dye:true},
+  {t:'bench2',   name:'Bench',        cost:{Plank:3},            note:'Cheaper than chairs.',     dye:true},
+  {t:'stool',    name:'Stool',        cost:{Plank:1},            note:'Three legs and no argument.'},
+  {t:'longtable',name:'Long table',   cost:{Plank:4},            note:'Seats whoever turns up.'},
+  {t:'sidetable',name:'Side table',   cost:{Plank:2},            note:'For the thing you put down.'},
+  /* storage */
+  {t:'dresser',  name:'Dresser',      cost:{Plank:4,Iron:1},     note:'Brass pulls and everything.'},
+  {t:'shelfjars',name:'Jar shelf',    cost:{Plank:3,Clay:2},     note:'Preserves, on show.'},
+  {t:'bookshelf',name:'Bookshelf',    cost:{Plank:5},            note:'Somewhere for the winter reading.'},
+  {t:'chest',    name:'Storage chest',cost:{Plank:4,Iron:1},     note:'Holds what your basket will not.', store:true},
+  {t:'crate',    name:'Crate',        cost:{Plank:2},            note:'Stackable, in theory.'},
+  {t:'barrel',   name:'Barrel',       cost:{Plank:3,Iron:1},     note:'Holds what needs holding.'},
+  {t:'sackpile', name:'Sacks',        cost:{Cloth:2},            note:'Grain, mostly.'},
+  /* soft things */
+  {t:'rug',      name:'Rug',          cost:{Cloth:3},            note:'Warm underfoot. Walk over it.', dye:true},
+  {t:'bigrug',   name:'Long rug',     cost:{Cloth:5},            note:'Covers most of a room.',        dye:true},
+  {t:'cushion',  name:'Floor cushion',cost:{Cloth:2},            note:'For sitting low.',              dye:true},
+  {t:'bedsmall', name:'Spare bed',    cost:{Plank:4,Cloth:3},    note:'For whoever turns up late.',    dye:true},
+  /* on the walls and beams */
+  {t:'hangherb', name:'Drying herbs', cost:{Sage:2,Rope:1},      note:'Hangs from the beam.'},
+  {t:'hangpots', name:'Pot rail',     cost:{Iron:2},             note:'Everything within reach.'},
+  {t:'picture',  name:'A framed thing',cost:{Plank:1,Cloth:1},   note:'Nobody agrees what it is of.',  dye:true},
+  {t:'antlers',  name:'Antlers',      cost:{Hide:1,Plank:1},     note:'From the hide, one autumn.'},
+  {t:'lamp',     name:'Wall lamp',    cost:{Iron:1,Butter:1},    note:'Burns low all evening.'},
+  /* growing and living */
+  {t:'plant',    name:'Potted plant', cost:{Clay:2,Berries:1},   note:'It will probably survive you.'},
+  {t:'herbpot',  name:'Herb pot',     cost:{Clay:2,Sage:1},      note:'Sage on the windowsill.'},
+  {t:'bucket',   name:'Bucket',       cost:{Iron:1},             note:'A bucket.'},
+  {t:'coal',     name:'Coal scuttle', cost:{Iron:1,Stone:2},     note:'By the hearth, where it belongs.'},
+  {t:'haybale',  name:'Hay bale',     cost:{Feed:2},             note:'For the barn, or for sitting on.'},
 ];
+const DYES=[
+  {id:'oak',   n:'Oak',        c:'#6E5638'},
+  {id:'ash',   n:'Ash',        c:'#A89A80'},
+  {id:'moss',  n:'Moss',       c:'#4E7A4E'},
+  {id:'rust',  n:'Rust',       c:'#A85A3C'},
+  {id:'plum',  n:'Plum',       c:'#6B3A5E'},
+  {id:'slate', n:'Slate',      c:'#4A5A66'},
+  {id:'honey', n:'Honey',      c:'#C9A44E'},
+  {id:'ink',   n:'Ink',        c:'#2E3440'},
+];
+function dyeOf(m){return (m&&m.dye)?(DYES.find(d=>d.id===m.dye)||null):null;}
 function canDecorate(){
   return !!S.inside&&S.inside===myHomeId();
+}
+/* what you have put in a given room, by room */
+function myStuff(key){
+  S.myStuff=S.myStuff||{};
+  const k=key||roomKey();
+  if(!k)return [];                        /* nothing to furnish out here */
+  S.myStuff[k]=S.myStuff[k]||[];
+  return S.myStuff[k];
 }
 function openFurnish(){
   paused=true;
@@ -6186,6 +6367,303 @@ function openFurnish(){
   });
   document.getElementById('closeB').onclick=close;
 }
+
+
+
+
+/* ---- looking round somebody else's house ---- */
+function openTheirHouse(id,back){
+  const g=(NET.growers||[]).find(x=>x.id===id);
+  if(!g){(back||close)();return;}
+  const home=(g.look&&g.look.home)||{};
+  const rooms=home.rooms||{};
+  const keys=Object.keys(rooms);
+  paused=true;
+  if(!keys.length){
+    OR('<h3>'+esc(g.handle)+'\u2019s place</h3>'
+      +'<p class="sub">Swept, and not much else. They have not started on it yet.</p>'
+      +'<div class="acts"><button class="primary" id="backB">Back</button></div>');
+    document.getElementById('backB').onclick=back||close;return;
+  }
+  const named=(t)=>((MAKEABLE.find(m=>m.t===t)||{}).name||t);
+  const roomName={main:'Downstairs',bed:'The bedroom',up:'The loft'};
+  const body=keys.map(r=>{
+    const list=rooms[r]||[];
+    const fin=(home.finish||{})[r]||{};
+    const fl=FLOORS.find(x=>x.id===fin.floor);
+    const wl=WALLS.find(x=>x.id===fin.wall);
+    /* count what is in there */
+    const tally={};
+    list.forEach(m=>{tally[m.t]=(tally[m.t]||0)+1;});
+    return '<h3 style="font-size:14px;margin:14px 0 6px;">'+(roomName[r]||r)+'</h3>'
+      +'<div class="hint" style="margin-bottom:6px;">'
+      +(fl?fl.n:'plain boards')+' underfoot, '+(wl?wl.n.toLowerCase():'bare plaster')+' on the walls.</div>'
+      +'<div class="grid">'+Object.keys(tally).map(t=>
+        '<div class="cell"><div class="n">'+esc(named(t))+'</div><div class="c">'+tally[t]+'</div></div>').join('')
+      +'</div>';
+  }).join('');
+  const work=home.work||{};
+  const done=[];
+  if(work.widen)done.push('the wall knocked through');
+  if(work.deepen)done.push('the back extended');
+  if(work.stairs)done.push('a stair put in');
+  if(work.loft)done.push('the loft boarded');
+  const total=keys.reduce((a,r)=>a+(rooms[r]||[]).length,0);
+  OR('<h3>'+esc(g.handle)+'\u2019s place</h3>'
+    +'<p class="sub">'+(total>18?'Somebody has been busy.':total>6?'Coming along.':'Early days.')
+    +' '+total+' things put where they wanted them.</p>'
+    +(done.length?('<div class="card"><strong>What they have done to it</strong>'
+      +'<div class="hint">'+done.join(', ')+'</div></div>'):'')
+    +body
+    +'<div class="acts"><button id="writeB2">Leave a note</button>'
+    +'<button class="primary" id="backB">Back</button></div>');
+  document.getElementById('backB').onclick=back||close;
+  const w=document.getElementById('writeB2');
+  if(w)w.onclick=()=>openWrite(id,g.handle,()=>openTheirHouse(id,back));
+}
+/* ============================================================
+   LETTERS — you can write to people. That was missing.
+   ============================================================ */
+const NOTE_STARTS=[
+  'Thought you should know —',
+  'No reply needed.',
+  'Left this on your gate because you were out.',
+  'Quick one.',
+  'Do not laugh.',
+];
+function openWrite(toId,toName,back){
+  paused=true;
+  const others=(NET.growers||[]).filter(g=>g.id!==NET.me);
+  const target=toId?[{id:toId,name:toName||'them'}]
+    :others.map(g=>({id:g.id,name:(g.handle||'somebody')}));
+  if(!NET.ready()){
+    OR('<h3>Writing to somebody</h3>'
+      +'<p class="sub">You are not sharing a valley yet, so there is nobody to write to. '
+      +'Menu, then Playing with friends.</p>'
+      +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+    document.getElementById('closeB').onclick=back||close;return;
+  }
+  if(!target.length){
+    OR('<h3>Writing to somebody</h3>'
+      +'<p class="sub">Nobody else has come to this valley yet. When they do, you can leave them a letter.</p>'
+      +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+    document.getElementById('closeB').onclick=back||close;return;
+  }
+  OR('<h3>A letter</h3>'
+    +'<div class="hint" style="margin-bottom:8px;">It will be on their gate next time they come out. '
+    +'No hurry — that is rather the point.</div>'
+    +'<div class="hint" style="margin-bottom:4px;">To</div>'
+    +'<div class="acts" id="whoRow" style="margin-bottom:10px;">'
+    +target.map((g,i)=>'<button data-to="'+g.id+'" class="'+(i===0?'primary':'')+'">'+esc(g.name)+'</button>').join('')
+    +'</div>'
+    +'<textarea id="noteBody" maxlength="240" rows="4" placeholder="'+esc(NOTE_STARTS[Math.floor(Math.random()*NOTE_STARTS.length)])+'" '
+    +'style="width:100%;background:rgba(237,230,214,0.06);border:1px solid var(--line);'
+    +'color:var(--parchment);padding:10px;border-radius:5px;font-size:14px;font-family:inherit;'
+    +'line-height:1.5;resize:vertical;"></textarea>'
+    +'<div class="hint" id="noteCount" style="margin-top:4px;">240 left</div>'
+    +'<div class="acts"><button class="primary" id="sendB">Leave it on their gate</button>'
+    +'<button id="cancelB">Not now</button></div>');
+  let to=target[0].id, toN=target[0].name;
+  document.querySelectorAll('[data-to]').forEach(b=>b.onclick=()=>{
+    to=b.dataset.to;toN=b.innerText;
+    document.querySelectorAll('[data-to]').forEach(x=>x.className='');
+    b.className='primary';
+  });
+  const body=document.getElementById('noteBody');
+  const count=document.getElementById('noteCount');
+  if(body)body.oninput=()=>{if(count)count.innerText=(240-body.value.length)+' left';};
+  document.getElementById('sendB').onclick=async()=>{
+    const text=(body&&body.value||'').trim();
+    if(!text){toast('Nothing written yet.');return;}
+    const me=(NET.growers||[]).find(g=>g.id===NET.me);
+    const from=(me&&me.handle)||S.player.name||'somebody';
+    await NET.note(to,from+': '+text);
+    S.sent=(S.sent||0)+1;
+    S.standing++;
+    SFX.ok();await save();
+    toast('Left on '+toN+'\u2019s gate. They will find it when they find it.',4000);
+    (back||close)();
+  };
+  document.getElementById('cancelB').onclick=back||close;
+}
+/* ---- what the room itself is made of ---- */
+const FLOORS=[
+  {id:'pine',  n:'Pine boards',   a:'#58472F',b:'#4E3E2A',cost:{Plank:4}},
+  {id:'oakf',  n:'Dark oak',      a:'#463424',b:'#3C2C1E',cost:{Plank:6}},
+  {id:'ash',   n:'Pale ash',      a:'#7A6A50',b:'#6E5F47',cost:{Plank:6}},
+  {id:'stone', n:'Flagstones',    a:'#5A5A54',b:'#50504A',cost:{Stone:8}},
+  {id:'brick', n:'Brick',         a:'#7A4A3C',b:'#6B4034',cost:{Brick:6}},
+  {id:'clayf', n:'Beaten earth',  a:'#6B5A3E',b:'#5E4E35',cost:{Clay:6}},
+];
+const WALLS=[
+  {id:'plain', n:'Bare plaster',  c:'#463A30',cost:{Clay:4}},
+  {id:'lime',  n:'Limewash',      c:'#6E6455',cost:{Clay:6}},
+  {id:'green', n:'Green wash',    c:'#3E4A38',cost:{Clay:4,Sage:2}},
+  {id:'blue',  n:'Blue wash',     c:'#38434E',cost:{Clay:4,Berries:2}},
+  {id:'panel', n:'Timber panel',  c:'#4A3826',cost:{Plank:6}},
+  {id:'warm',  n:'Ochre',         c:'#5E4A32',cost:{Clay:4,Butter:1}},
+];
+function finishOf(){
+  S.finish=S.finish||{};
+  const k=roomKey();
+  if(!k)return {};
+  return S.finish[k]||{};
+}
+function openFinishes(){
+  paused=true;
+  const f=finishOf();
+  const row=(list,cur,kind)=>list.map(o=>{
+    const can=has(o.cost);
+    const on=(cur===o.id);
+    const swatch=(kind==='floor')
+      ? '<span style="display:inline-block;width:26px;height:22px;border-radius:3px;border:1px solid var(--line);'
+        +'background:repeating-linear-gradient(180deg,'+o.a+' 0 6px,'+o.b+' 6px 12px);"></span>'
+      : '<span style="display:inline-block;width:26px;height:22px;border-radius:3px;border:1px solid var(--line);'
+        +'background:'+o.c+';"></span>';
+    return '<div class="row"><div style="display:flex;gap:10px;align-items:center;min-width:0;">'
+      +swatch+'<div><strong>'+o.n+'</strong>'
+      +(on?' <span class="hint" style="color:var(--green)">· in place</span>':'')
+      +'<div class="hint">'+Object.entries(o.cost).map(([k2,v])=>{
+        const short=bagCount(k2)<v;
+        return '<span style="color:'+(short?'var(--rose)':'var(--green)')+'">'+bagCount(k2)+'/'+v+' '+k2+'</span>';
+      }).join(' · ')+'</div></div></div>'
+      +(on?'<span class="hint">✓</span>'
+        :'<button '+(can?'class="primary" ':'disabled ')+'data-'+kind+'="'+o.id+'">Lay it</button>')
+      +'</div>';
+  }).join('');
+  OR('<h3>The room itself</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Floors and walls, room by room. '
+    +'Your bedroom and your loft can be different from downstairs.</div>'
+    +'<h3 style="font-size:14px;margin:12px 0 6px;">Floor</h3>'+row(FLOORS,f.floor,'floor')
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">Walls</h3>'+row(WALLS,f.wall,'wall')
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-floor]').forEach(b=>{if(b.disabled)return;
+    b.onclick=async()=>{
+      const o=FLOORS.find(x=>x.id===b.dataset.floor);
+      if(!has(o.cost))return;
+      payFor(o.cost);
+      S.finish=S.finish||{};S.finish[roomKey()]=Object.assign({},finishOf(),{floor:o.id});
+      SFX.build();await save();openFinishes();
+    };});
+  document.querySelectorAll('[data-wall]').forEach(b=>{if(b.disabled)return;
+    b.onclick=async()=>{
+      const o=WALLS.find(x=>x.id===b.dataset.wall);
+      if(!has(o.cost))return;
+      payFor(o.cost);
+      S.finish=S.finish||{};S.finish[roomKey()]=Object.assign({},finishOf(),{wall:o.id});
+      SFX.build();await save();openFinishes();
+    };});
+  document.getElementById('closeB').onclick=close;
+}
+
+/* ---- a chest that actually holds things ---- */
+function chestKey(m){return roomKey()+'#'+((m&&m.x)||0)+','+((m&&m.y)||0);}
+function chestOf(m){
+  S.chests=S.chests||{};
+  const k=chestKey(m);
+  S.chests[k]=S.chests[k]||[];
+  return S.chests[k];
+}
+const CHEST_SLOTS=24;
+function openChest(m){
+  paused=true;
+  const inside=chestOf(m);
+  const mine=S.bag.filter(b=>b.n>0);
+  const total=inside.reduce((a,b)=>a+b.n,0);
+  OR('<h3>The chest</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">Whatever will not fit in your basket. '
+    +inside.length+' of '+CHEST_SLOTS+' kinds in here.</div>'
+    +'<h3 style="font-size:14px;margin:12px 0 6px;">In the chest</h3>'
+    +(inside.length
+      ? '<div class="grid">'+inside.map((b,i)=>'<div class="cell" data-out="'+i+'">'
+          +'<div class="n">'+esc(b.item)+'</div><div class="c">'+b.n+'</div></div>').join('')+'</div>'
+      : '<div class="hint">Empty.</div>')
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">In your basket</h3>'
+    +(mine.length
+      ? '<div class="grid">'+mine.map((b,i)=>'<div class="cell" data-in="'+esc(b.item)+'">'
+          +'<div class="n">'+esc(b.item)+'</div><div class="c">'+b.n+'</div></div>').join('')+'</div>'
+      : '<div class="hint">Nothing on you.</div>')
+    +'<div class="hint" style="margin-top:8px;">Tap to move one across. Hold nothing back.</div>'
+    +'<div class="acts"><button id="allInB">Put everything in</button>'
+    +'<button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-in]').forEach(b=>b.onclick=async()=>{
+    const item=b.dataset.in;
+    if(inside.length>=CHEST_SLOTS&&!inside.find(x=>x.item===item)){
+      toast('The chest is full of too many different things.');return;}
+    if(!bagTake(item,1))return;
+    const row=inside.find(x=>x.item===item);
+    if(row)row.n++;else inside.push({item,n:1});
+    SFX.pick();await save();openChest(m);
+  });
+  document.querySelectorAll('[data-out]').forEach(b=>b.onclick=async()=>{
+    const i=parseInt(b.dataset.out);
+    const row=inside[i];if(!row)return;
+    row.n--;bagAdd(row.item,1);
+    if(row.n<=0)inside.splice(i,1);
+    SFX.pick();await save();openChest(m);
+  });
+  document.getElementById('allInB').onclick=async()=>{
+    S.bag.filter(b=>b.n>0).slice().forEach(b=>{
+      if(inside.length>=CHEST_SLOTS&&!inside.find(x=>x.item===b.item))return;
+      const n=b.n;
+      if(!bagTake(b.item,n))return;
+      const row=inside.find(x=>x.item===b.item);
+      if(row)row.n+=n;else inside.push({item:b.item,n});
+    });
+    SFX.craft();await save();openChest(m);
+  };
+  document.getElementById('closeB').onclick=close;
+}
+/* ---- picking your own things up and putting them somewhere better ---- */
+function nearMyStuff(){
+  if(!canDecorate())return null;
+  const list=myStuff();
+  const tx=Math.floor((S.ipx+16)/TILE), ty=Math.floor((S.ipy+20)/TILE);
+  /* what you are standing on, or right next to */
+  let best=null,bd=99;
+  list.forEach((m,i)=>{
+    const [w,h]=PROP_SIZE[m.t]||[1,1];
+    const cx=m.x+Math.max(0,(w-1))/2, cy=m.y+Math.max(0,(h-1))/2;
+    const d=Math.abs(cx-tx)+Math.abs(cy-ty);
+    if(d<bd&&d<=1){bd=d;best={m,i};}
+  });
+  return best;
+}
+function pickUpStuff(){
+  const hit=nearMyStuff();
+  if(!hit)return false;
+  const list=myStuff();
+  const m=list[hit.i];
+  list.splice(hit.i,1);
+  S.carrying=m.t;
+  S.carryDye=m.dye||null;
+  SFX.pick();save();
+  const name=(MAKEABLE.find(x=>x.t===m.t)||{}).name||m.t;
+  toast('You pick up the '+name.toLowerCase()+'. Stand where you want it and press E.',3800);
+  return true;
+}
+function repaintStuff(){
+  const hit=nearMyStuff();
+  if(!hit){toast('Stand by something of yours first.');return;}
+  const list=myStuff();
+  const m=list[hit.i];
+  const mk=MAKEABLE.find(x=>x.t===m.t);
+  if(!mk||!mk.dye){toast('That one is the colour it is.');return;}
+  paused=true;
+  OR('<h3>'+esc(mk.name)+'</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">A pot of dye and an afternoon.</div>'
+    +DYES.map(d=>'<div class="row"><div style="display:flex;gap:10px;align-items:center;">'
+      +'<span style="display:inline-block;width:22px;height:22px;border-radius:4px;'
+      +'background:'+d.c+';border:1px solid var(--line);"></span><strong>'+d.n+'</strong></div>'
+      +(m.dye===d.id?'<span class="hint">\u2713</span>':'<button data-dye="'+d.id+'">Use it</button>')
+      +'</div>').join('')
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-dye]').forEach(b=>b.onclick=async()=>{
+    m.dye=b.dataset.dye;SFX.ok();await save();close();
+    toast('Done. It suits the room better.');
+  });
+  document.getElementById('closeB').onclick=close;
+}
 function placeFurniture(){
   const t=S.carrying;if(!t)return false;
   const tx=Math.floor((S.ipx+16)/TILE), ty=Math.floor((S.ipy+20)/TILE);
@@ -6197,8 +6675,8 @@ function placeFurniture(){
   })||(sp.props||[]).some(p=>p[0]===tx&&p[1]===ty)
    ||myStuff(roomKey()).some(m=>m.x===tx&&m.y===ty);
   if(clash){toast('Something is already there.');return true;}
-  myStuff(roomKey()).push({t,x:tx,y:ty});
-  S.carrying=null;SFX.build();save();
+  myStuff(roomKey()).push({t,x:tx,y:ty,dye:S.carryDye||null});
+  S.carrying=null;S.carryDye=null;SFX.build();save();
   toast('Set down. Looks right there.');
   return true;
 }
@@ -6243,7 +6721,10 @@ const INSIDE={
     props:[[7,4,'haybale'],[12,4,'haybale'],[2,5,'crate'],[13,1,'hangherb'],[6,1,'barrel']]},
 };
 /* homes are two rooms: the main room, and a bedroom through the back door */
-function roomKey(){return S.inside+(S.room&&S.room!=='main'?(':'+S.room):'');}
+function roomKey(){
+  if(!S.inside)return '';                 /* outdoors — no room to key anything to */
+  return S.inside+(S.room&&S.room!=='main'?(':'+S.room):'');
+}
 function bedroomFor(id){
   const mine=(typeof myHomeId==='function')&&myHomeId()===id;
   const fam=(typeof cottageFamily==='function')?cottageFamily(id):'';
@@ -6314,9 +6795,11 @@ function leaveInside(){
   if(b){S.px=b.door.x*TILE;S.py=(b.door.y+1)*TILE;}
   save();
 }
-const PROP_SIZE={longtable:[3,1],bench2:[2,1],rug:[0,0],hangherb:[0,0],hangpots:[0,0],
+const PROP_SIZE={longtable:[3,1],bench2:[2,1],bigrug:[0,0],rug:[0,0],cushion:[0,0],
+  hangherb:[0,0],hangpots:[0,0],picture:[0,0],antlers:[0,0],lamp:[0,0],
   barrel:[1,1],crate:[1,1],sackpile:[1,1],haybale:[1,1],shelfjars:[1,1],
-  chair:[1,1],dresser:[1,1],bucket:[1,1],coal:[1,1],anvil2:[1,1]};
+  chair:[1,1],stool:[1,1],dresser:[1,1],bucket:[1,1],coal:[1,1],anvil2:[1,1],
+  bookshelf:[1,1],chest:[1,1],sidetable:[1,1],plant:[1,1],herbpot:[1,1],bedsmall:[2,1]};
 const STATION_SIZE={bed:[2,1],table:[2,1],longtable:[3,1],oven:[1,1],furnace:[1,1],
   loom:[1,1],mill:[1,1],churn:[1,1],anvil:[1,1],bench:[1,1],rack:[1,1],shelf:[1,1],
   plans:[1,1],seeds:[1,1],sacks:[1,1],herbs:[1,1],board:[1,1],hearth:[1,1]};
@@ -6334,7 +6817,7 @@ function insideBlocked(px,py){
     if(w===0)continue;                    /* rugs and hanging things are not in the way */
     if(tx>=p[0]&&tx<p[0]+w&&ty>=p[1]&&ty<p[1]+h)return true;
   }
-  for(const m of ((S.myStuff&&S.myStuff[S.inside])||[])){
+  for(const m of ((S.myStuff&&S.myStuff[roomKey()])||[])){
     const [w,h]=PROP_SIZE[m.t]||[1,1];
     if(w===0)continue;
     if(tx>=m.x&&tx<m.x+w&&ty>=m.y&&ty<m.y+h)return true;
@@ -6364,8 +6847,17 @@ function nearStation(){
 }
 function drawInside(){
   resetView();
-  const id=S.inside, sp=insideSpec(id);
+  const id=S.inside;
+  let sp=insideSpec(id);
   if(!sp)return;
+  /* your choice of floor and wall, if you have made one */
+  if(typeof finishOf==="function"){
+    const fin=finishOf();
+    if(fin.floor){const o=FLOORS.find(x=>x.id===fin.floor);
+      if(o)sp=Object.assign({},sp,{floor:o.a,floorB:o.b});}
+    if(fin.wall){const o=WALLS.find(x=>x.id===fin.wall);
+      if(o)sp=Object.assign({},sp,{wall:o.c});}
+  }
   const RW=roomW()*TILE, RH=roomH()*TILE;
   ctx.fillStyle='#0C0A08';ctx.fillRect(0,0,cw,ch);
   const sc=Math.min(cw/RW,ch/RH)*0.96;
@@ -6465,13 +6957,16 @@ function drawInside(){
   });
   /* and anything you have put here yourself */
   ((S.myStuff&&S.myStuff[roomKey()])||[]).forEach(m=>{
-    layerProps.push({y:(m.y+1)*TILE,f:()=>drawProp(m.t,m.x,m.y)});
+    const tint=(DYES.find(d=>d.id===m.dye)||{}).c;
+    layerProps.push({y:(m.y+1)*TILE,f:()=>drawProp(m.t,m.x,m.y,tint)});
   });
   /* the piece in your arms, ghosted where it would land */
   if(S.carrying){
     const tx=Math.floor((S.ipx+16)/TILE), ty=Math.floor((S.ipy+20)/TILE);
     layerProps.push({y:(ty+1)*TILE+1,f:()=>{
-      ctx.globalAlpha=0.55;drawProp(S.carrying,tx,ty);ctx.globalAlpha=1;
+      ctx.globalAlpha=0.55;
+      drawProp(S.carrying,tx,ty,(DYES.find(d=>d.id===S.carryDye)||{}).c);
+      ctx.globalAlpha=1;
       ctx.strokeStyle='#E0A63D';ctx.lineWidth=2;
       ctx.strokeRect(tx*TILE,ty*TILE,TILE,TILE);
     }});
@@ -6542,7 +7037,12 @@ function drawInside(){
   if(canDecorate()){
     ctx.fillStyle='rgba(10,14,12,0.72)';ctx.fillRect(cw-176,36,168,26);
     ctx.fillStyle='rgba(224,166,61,0.95)';ctx.font='11px Inter';ctx.textAlign='center';
-    ctx.fillText(S.carrying?'E to set it down · F to cancel':'F furnish  ·  B build out',cw-92,53);
+    ctx.fillText(S.carrying
+      ? 'E to set it down  ·  F to put it back'
+      : (()=>{const h=nearMyStuff();
+          if(h&&h.m.t==='chest')return 'E to open it  ·  C to paint  ·  hold to move';
+          if(h)return 'E to pick up  ·  C to paint it';
+          return 'F furnish · V floors · B build out';})(),cw-92,53);
   }
   /* name plate */
   ctx.fillStyle='rgba(10,12,10,0.7)';ctx.fillRect(0,0,cw,30);
@@ -6551,6 +7051,12 @@ function drawInside(){
 }
 function useStation(){
   if(S.carrying&&placeFurniture())return;
+  /* nothing in your hands and you are stood on your own furniture */
+  if(!S.carrying){
+    const hit=nearMyStuff();
+    if(hit&&hit.m.t==='chest'){openChest(hit.m);return;}   /* a chest opens */
+    if(hit&&pickUpStuff())return;                           /* everything else lifts */
+  }
   const who=nearFolkInside();
   const st=nearStation();
   /* whoever is closer wins */
@@ -6572,7 +7078,111 @@ function useStation(){
   else if(st.act==='sleep')doSleep();
 }
 
-function drawProp(t,x,y){
+
+/* ---- the pieces added later, and colour where it suits ---- */
+function drawProp2(t,x,y,tint){
+  const px=x*TILE, py=y*TILE;
+  const W=tint||'#6E5638';
+  const sh=(w,h)=>{ctx.fillStyle='rgba(0,0,0,0.28)';ctx.fillRect(px+3,py+h-3,w,4);};
+  if(t==='stool'){
+    ctx.fillStyle='rgba(0,0,0,0.24)';ctx.fillRect(px+9,py+22,14,4);
+    ctx.fillStyle=W;ctx.fillRect(px+8,py+12,16,6);
+    ctx.fillStyle=shadeC(W,1.2);ctx.fillRect(px+8,py+12,16,2);
+    ctx.fillStyle=shadeC(W,0.7);
+    ctx.fillRect(px+9,py+18,3,7);ctx.fillRect(px+20,py+18,3,7);ctx.fillRect(px+15,py+18,3,6);
+  }else if(t==='sidetable'){
+    sh(20,26);
+    ctx.fillStyle=W;ctx.fillRect(px+6,py+10,20,6);
+    ctx.fillStyle=shadeC(W,1.2);ctx.fillRect(px+6,py+10,20,2);
+    ctx.fillStyle=shadeC(W,0.7);ctx.fillRect(px+8,py+16,3,10);ctx.fillRect(px+21,py+16,3,10);
+    ctx.fillStyle='#C9A44E';ctx.fillRect(px+13,py+6,6,4);
+  }else if(t==='bookshelf'){
+    sh(26,32);
+    ctx.fillStyle='#171310';ctx.fillRect(px+2,py-8,28,40);
+    ctx.fillStyle=W;ctx.fillRect(px+3,py-7,26,38);
+    for(let r=0;r<4;r++){
+      ctx.fillStyle='rgba(0,0,0,0.34)';ctx.fillRect(px+4,py-1+r*9,24,2);
+      for(let i=0;i<6;i++){
+        const seed=hashStr('bk'+x+y+r+i);
+        ctx.fillStyle=['#8C2F3A','#3E5A6A','#4E7A4E','#6B5B3C','#7A4A6A','#2E4A6A'][seed%6];
+        const bh=5+(seed%3);
+        ctx.fillRect(px+5+i*4,py-1+r*9-bh,3,bh);
+      }
+    }
+  }else if(t==='chest'){
+    sh(26,26);
+    ctx.fillStyle='#171310';ctx.fillRect(px+3,py+6,26,22);
+    ctx.fillStyle=shadeC(W,0.9);ctx.fillRect(px+4,py+7,24,20);
+    ctx.fillStyle=shadeC(W,1.15);ctx.fillRect(px+4,py+7,24,6);
+    ctx.fillStyle='#3E3830';ctx.fillRect(px+4,py+13,24,2);
+    ctx.fillStyle='#C9A44E';ctx.fillRect(px+14,py+15,5,5);
+    ctx.fillStyle='#8C7A3C';ctx.fillRect(px+6,py+7,2,20);ctx.fillRect(px+24,py+7,2,20);
+  }else if(t==='bigrug'){
+    ctx.fillStyle=shadeC(W,0.85);ctx.fillRect(px-16,py+2,TILE*3,TILE-4);
+    ctx.fillStyle=W;ctx.fillRect(px-12,py+6,TILE*3-8,TILE-12);
+    ctx.fillStyle=shadeC(W,1.3);ctx.fillRect(px-4,py+10,TILE*3-24,TILE-20);
+    ctx.fillStyle='rgba(237,230,214,0.25)';
+    for(let i=0;i<TILE*3;i+=6)ctx.fillRect(px-16+i,py-1,3,3);
+  }else if(t==='cushion'){
+    ctx.fillStyle='rgba(0,0,0,0.18)';ctx.fillRect(px+7,py+18,18,4);
+    ctx.fillStyle=W;ctx.fillRect(px+6,py+8,20,12);
+    ctx.fillStyle=shadeC(W,1.25);ctx.fillRect(px+8,py+9,10,4);
+    ctx.fillStyle=shadeC(W,0.7);ctx.fillRect(px+6,py+18,20,2);
+    ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(px+15,py+13,2,2);
+  }else if(t==='bedsmall'){
+    ctx.fillStyle='#4E3A24';ctx.fillRect(px,py-2,TILE*2-4,TILE);
+    ctx.fillStyle='#D8CFBC';ctx.fillRect(px+3,py+4,TILE*2-10,TILE-8);
+    ctx.fillStyle=W;ctx.fillRect(px+3,py+9,TILE*2-10,TILE-13);
+    ctx.fillStyle=shadeC(W,1.2);ctx.fillRect(px+3,py+9,TILE*2-10,2);
+    ctx.fillStyle='#F2ECDE';ctx.fillRect(px+5,py+2,18,8);
+  }else if(t==='picture'){
+    ctx.fillStyle='#171310';ctx.fillRect(px+5,py+2,22,18);
+    ctx.fillStyle='#C9A44E';ctx.fillRect(px+6,py+3,20,16);
+    ctx.fillStyle=W;ctx.fillRect(px+8,py+5,16,12);
+    ctx.fillStyle=shadeC(W,1.4);ctx.fillRect(px+9,py+11,14,5);
+    ctx.fillStyle=shadeC(W,0.6);ctx.fillRect(px+12,py+7,7,5);
+  }else if(t==='antlers'){
+    ctx.fillStyle='#5A4632';ctx.fillRect(px+12,py+12,8,5);
+    ctx.fillStyle='#C8B48C';
+    ctx.fillRect(px+13,py+4,2,9);ctx.fillRect(px+17,py+4,2,9);
+    ctx.fillRect(px+9,py+6,4,2);ctx.fillRect(px+19,py+6,4,2);
+    ctx.fillRect(px+8,py+2,2,5);ctx.fillRect(px+22,py+2,2,5);
+    ctx.fillRect(px+11,py,2,4);ctx.fillRect(px+19,py,2,4);
+  }else if(t==='lamp'){
+    ctx.fillStyle='#2A2118';ctx.fillRect(px+10,py+2,3,7);
+    ctx.fillStyle='#C9A44E';ctx.fillRect(px+7,py+9,12,8);
+    const f=0.55+0.45*Math.sin(Date.now()/300+x);
+    ctx.fillStyle='rgba(255,215,120,'+f+')';ctx.fillRect(px+9,py+11,8,5);
+    const gl=ctx.createRadialGradient(px+13,py+13,3,px+13,py+13,54);
+    gl.addColorStop(0,'rgba(255,215,140,0.20)');gl.addColorStop(1,'rgba(255,215,140,0)');
+    ctx.fillStyle=gl;ctx.fillRect(px-40,py-40,110,110);
+  }else if(t==='plant'){
+    ctx.fillStyle='rgba(0,0,0,0.24)';ctx.fillRect(px+9,py+24,14,4);
+    ctx.fillStyle='#8C5A42';ctx.fillRect(px+9,py+16,14,10);
+    ctx.fillStyle='#A87050';ctx.fillRect(px+10,py+17,5,8);
+    ctx.fillStyle='#6E4432';ctx.fillRect(px+8,py+14,16,3);
+    const sw=Math.sin(Date.now()/1400+x)*1.2;
+    ctx.fillStyle='#3E6A3A';
+    ctx.fillRect(px+15,py+4,2,11);
+    ctx.fillStyle='#4E8B4E';
+    ctx.fillRect(px+10+sw,py+6,6,3);ctx.fillRect(px+17+sw,py+3,6,3);
+    ctx.fillRect(px+11-sw,py+10,5,3);ctx.fillRect(px+17-sw,py+9,6,3);
+  }else if(t==='herbpot'){
+    ctx.fillStyle='rgba(0,0,0,0.22)';ctx.fillRect(px+10,py+22,12,4);
+    ctx.fillStyle='#A87050';ctx.fillRect(px+10,py+15,12,9);
+    ctx.fillStyle='#8C5A42';ctx.fillRect(px+10,py+15,12,2);
+    for(let i=0;i<4;i++){
+      ctx.fillStyle=['#6E8C4A','#8FA85C','#4E7A46','#A8BC72'][i];
+      ctx.fillRect(px+11+i*3,py+8+((i%2)*2),2,8);
+    }
+  }
+}
+function drawProp(t,x,y,tint){
+  /* the later additions live in their own painter */
+  if(['stool','sidetable','bookshelf','chest','bigrug','cushion','bedsmall',
+      'picture','antlers','lamp','plant','herbpot'].indexOf(t)>=0){
+    drawProp2(t,x,y,tint);return;
+  }
   const px=x*TILE, py=y*TILE;
   const sh=(w,h)=>{ctx.fillStyle='rgba(0,0,0,0.30)';ctx.fillRect(px+3,py+h-3,w,5);};
   if(t==='barrel'){
@@ -6832,7 +7442,38 @@ const CARD_LOSE=[
   "You had it until you didn't. It happens at this table.",
   "That last hand was cruel. Nobody blames you.",
 ];
+
+/* ---- how the card game works, said plainly ---- */
+function openHollowRules(back){
+  paused=true;
+  OR('<h3>Hollow Hands \u2014 how it goes</h3>'
+    +'<p class="sub">Two of you. Each with a heart of 22. Run the other one down to nothing.</p>'
+    +'<div class="card"><strong>1. Seed is what you spend</strong>'
+    +'<div class="hint">The number in the corner of a card is what it costs. You get one more seed every round, '
+    +'so the big things come out later. Unspent seed does not carry over.</div></div>'
+    +'<div class="card"><strong>2. Folk and beasts stand on the ground</strong>'
+    +'<div class="hint">The two numbers are <strong>harm / hardiness</strong>. Play one and it waits a round \u2014 '
+    +'it is getting its bearings. From the round after, it swings every turn.</div></div>'
+    +'<div class="card"><strong>3. Whatever is in the way gets hit first</strong>'
+    +'<div class="hint">Your cards go for the softest thing opposite. If there is nothing opposite, '
+    +'they go straight for the heart. That is how you actually win.</div></div>'
+    +'<div class="card"><strong>4. Tricks happen once and are gone</strong>'
+    +'<div class="hint">Rain heals your side. The flood hurts everything, yours as well. '
+    +'A gift given draws you two more.</div></div>'
+    +'<div class="card"><strong>5. Beat somebody and they teach you a card</strong>'
+    +'<div class="hint">That is the only way your deck grows. Nothing is bought.</div></div>'
+    +'<div class="hint" style="margin-top:10px;">'
+    +'<strong>If you are stuck:</strong> put something on the ground every single round, even a cheap one. '
+    +'An empty ground means their cards walk straight through to your heart.</div>'
+    +'<div class="acts"><button class="primary" id="backB">Right, got it</button></div>');
+  document.getElementById('backB').onclick=back||close;
+}
 function openCards(oppId){
+  if(!S.taughtCards){
+    S.taughtCards=true;save();
+    openHollowRules(()=>{S.cards=null;openCards(oppId);});
+    return;
+  }
   const opp=FOLK.find(f=>f.id===oppId)||FOLK[0];
   const mine=playerDeck().slice();
   /* their deck leans to who they are */
@@ -7019,17 +7660,38 @@ function renderCards(){
   const cardHtml=(id,extra,idx)=>{
     const d=cardById(id);if(!d)return '';
     const affordable=(C.turn==='you'&&!C.over&&d.c<=C.you.seed);
-    const tint=d.kind==='beast'?'#4A2A2E':(d.kind==='trick'?'#2A3A4A':'#2E3A2A');
+    const hurt=(extra!==undefined&&extra<d.h);
+    const face=d.kind==='beast'
+      ? {bg:'linear-gradient(180deg,#4A2A2E,#33191D)',edge:'#7A4A44',tag:'beast'}
+      : d.kind==='trick'
+      ? {bg:'linear-gradient(180deg,#28394C,#1B2833)',edge:'#4E6E8C',tag:'trick'}
+      : {bg:'linear-gradient(180deg,#2E3F2C,#1E2A1D)',edge:'#5E7A54',tag:'folk'};
     return '<button '+(idx!==undefined?('data-play="'+idx+'" '):'')
       +(idx!==undefined&&!affordable?'disabled ':'')
-      +'style="text-align:left;padding:7px 9px;min-width:96px;max-width:112px;'
-      +'background:'+tint+';border:1px solid '+(affordable?'var(--amber)':'var(--line)')+';'
-      +'border-radius:5px;margin:0 5px 6px 0;white-space:normal;">'
-      +'<div style="display:flex;justify-content:space-between;gap:5px;">'
-      +'<strong style="font-size:12px;">'+d.n+'</strong>'
-      +'<span style="color:var(--amber);font-size:12px;">'+d.c+'</span></div>'
-      +(d.kind!=='trick'?('<div class="hint" style="font-size:11px;">'+d.a+' / '+(extra!==undefined?extra:d.h)+'</div>'):'')
-      +'<div class="hint" style="font-size:9px;line-height:1.25;">'+d.t+'</div>'
+      +'style="position:relative;text-align:left;padding:0;width:104px;height:126px;'
+      +'background:'+face.bg+';border:2px solid '+(affordable?'var(--amber)':face.edge)+';'
+      +'border-radius:8px;margin:0 6px 8px 0;white-space:normal;overflow:hidden;'
+      +(affordable?'box-shadow:0 0 0 1px rgba(224,166,61,0.35);':'')
+      +(idx!==undefined&&!affordable?'opacity:.5;':'')+'">'
+      /* the cost, top left, like a stamp */
+      +'<div style="position:absolute;top:5px;left:5px;width:20px;height:20px;border-radius:50%;'
+      +'background:var(--amber);color:#171310;font-weight:700;font-size:12px;'
+      +'display:flex;align-items:center;justify-content:center;">'+d.c+'</div>'
+      /* what kind of thing it is */
+      +'<div style="position:absolute;top:7px;right:6px;font-size:8px;letter-spacing:.08em;'
+      +'text-transform:uppercase;color:rgba(237,230,214,0.45);">'+face.tag+'</div>'
+      /* the name */
+      +'<div style="margin:30px 7px 0;font-weight:600;font-size:12px;line-height:1.15;">'+d.n+'</div>'
+      /* what it does */
+      +'<div style="margin:4px 7px 0;font-size:9px;line-height:1.3;color:rgba(237,230,214,0.6);">'+d.t+'</div>'
+      /* harm and hardiness along the bottom */
+      +(d.kind!=='trick'
+        ? ('<div style="position:absolute;bottom:6px;left:6px;right:6px;display:flex;'
+          +'justify-content:space-between;align-items:center;">'
+          +'<span style="font-size:13px;font-weight:700;color:#E8A88A;">\u2694 '+d.a+'</span>'
+          +'<span style="font-size:13px;font-weight:700;color:'+(hurt?'#C4493C':'#8FBF84')+';">'
+          +'\u2665 '+(extra!==undefined?extra:d.h)+'</span></div>')
+        : '<div style="position:absolute;bottom:7px;left:7px;font-size:10px;color:rgba(237,230,214,0.5);">once, then gone</div>')
       +'</button>';
   };
   const line=(side,mine)=>side.board.length
@@ -7039,7 +7701,8 @@ function renderCards(){
     +'<strong style="color:var(--rose);">♥ '+Math.max(0,s.heart)+'</strong>'
     +'<span class="hint">seed '+s.seed+'/'+s.max+'</span>'
     +'<span class="hint">deck '+s.deck.length+'</span></div>';
-  OR('<h3>Hollow Hands <span class="hint" style="font-weight:400;">· against '+esc(C.oppName)+'</span></h3>'
+  OR('<h3>Hollow Hands <span class="hint" style="font-weight:400;">· against '+esc(C.oppName)+'</span>'
+    +'<button id="rulesB" style="float:right;font-size:11px;padding:3px 9px;">How it goes</button></h3>'
     +'<div class="row">'+heart(C.them)+'<span class="hint">round '+C.round+'</span></div>'
     +'<div style="display:flex;flex-wrap:wrap;margin:8px 0;">'+line(C.them)+'</div>'
     +'<div style="height:1px;background:var(--line);margin:10px 0;"></div>'
@@ -7058,6 +7721,8 @@ function renderCards(){
   document.querySelectorAll('[data-play]').forEach(b=>{if(b.disabled)return;
     b.onclick=()=>cardPlay(C.you.hand[parseInt(b.dataset.play)],parseInt(b.dataset.play));});
   paintTalkFace(C.opp);
+  const rb=document.getElementById('rulesB');
+  if(rb)rb.onclick=()=>openHollowRules(()=>renderCards());
   const e1=document.getElementById('endB');if(e1)e1.onclick=cardEndTurn;
   const q1=document.getElementById('quitB');if(q1)q1.onclick=()=>{S.cards=null;close();};
   const a1=document.getElementById('againB');if(a1)a1.onclick=()=>openCards(C.opp);
@@ -7076,6 +7741,7 @@ function openGames(oppId){
     +'<div class="row"><div style="min-width:0;"><strong>Hollow Hands</strong>'
       +'<div class="hint">The card game. Play folk and beasts, run the other side out of heart. Win and they teach you a card.</div>'
       +'<div class="hint">Your deck: '+playerDeck().length+' cards</div></div>'
+      +'<button data-g="rules">How</button>'
       +'<button class="primary" data-g="cards">Play</button></div>'
     +'<div class="row"><div style="min-width:0;"><strong>Three Bones</strong>'
       +'<div class="hint">Five rounds of dice and bluff. Say what you rolled. They may not believe you.</div></div>'
@@ -7092,7 +7758,8 @@ function openGames(oppId){
     +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
   document.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{
     const g=b.dataset.g;
-    if(g==='cards')openCards(oppId);
+    if(g==='rules')openHollowRules(()=>openGames(oppId));
+    else if(g==='cards')openCards(oppId);
     else if(g==='bones')openBones(oppId);
     else if(g==='stones')openStones(oppId);
     else if(g==='match')openMatch(oppId);
@@ -7507,14 +8174,26 @@ const FESTIVALS=[
    t:'Everyone puts something in the ground on the same morning. It is not efficient. That is not the point.',
    ask:{item:'seeds', n:3}, gift:['Bread','Cheese'],
    line:'Half the valley is out in the rows before the light is properly up.'},
-  {id:'longday',day:11, season:'summer', n:'The Long Day',
-   t:'The table goes out at noon and does not come back in until somebody carries it.',
-   ask:{item:'Berries', n:5}, gift:['Stew','Butter'],
-   line:'The long table is out in the middle of the green, and it is already covered.'},
+  {id:'stonesoup',day:9, season:'spring', n:'Stone Soup',
+   t:'A pot goes on the green with nothing in it but water and a stone. By evening it feeds everybody. Nobody can ever say who brought what.',
+   ask:{item:'crops', n:4}, gift:['Stew','Bread'],
+   line:'There is a pot on the green with a stone in it and Conrad standing over it looking innocent.'},
+  {id:'founders',day:13,season:'spring', n:"Founders' Day",
+   t:'For the people who cleared this ground and did not live to farm it. Their names get read out. It takes longer every year.',
+   ask:{item:'Wood', n:5}, gift:['Remedy','Cloth'],
+   line:'Somebody has swept the whole green before anyone was awake.'},
   {id:'catch',  day:7,  season:'summer', n:'The Catch',
    t:'Everybody fishes. Whoever brings the most feeds the rest of us.',
    contest:'fish', gift:['Rope','Cloth'],
    line:'There is nobody in the village. They are all stood along the river.'},
+  {id:'longday',day:11, season:'summer', n:'The Long Day',
+   t:'The table goes out at noon and does not come back in until somebody carries it.',
+   ask:{item:'Berries', n:5}, gift:['Stew','Butter'],
+   line:'The long table is out in the middle of the green, and it is already covered.'},
+  {id:'freedom',day:2,  season:'autumn', n:'Freedom Day',
+   t:'The day the last debt in this valley was torn up. Nobody has written one since. There is a fire, and people throw paper on it.',
+   ask:{item:'Wood', n:4}, gift:['Bread','Butter','Yarn'],
+   line:'A fire is laid on the green and nobody will say who is lighting it.'},
   {id:'harvest',day:12, season:'autumn', n:'Harvest Home',
    t:'The board comes down. Nothing is asked of anybody for one day.',
    ask:{item:'crops', n:8}, gift:['Cheese','Yarn','Remedy'],
@@ -7523,6 +8202,14 @@ const FESTIVALS=[
    t:'The shortest evening, and every window lit against it.',
    ask:{item:'Wood', n:6}, gift:['Salve','Bread'],
    line:'Lanterns in every window, and the snow taking the colour of them.'},
+  {id:'quiet',  day:11, season:'winter', n:'The Quiet Week',
+   t:'Nothing is asked and nothing is given. Everybody stays in. It is the only day of the year the board is turned to the wall.',
+   ask:{item:'Remedy', n:2}, gift:['Cheese','Salve'],
+   line:'The board has been turned to face the wall. Somebody does it every year without being asked.'},
+  {id:'thaw',   day:1,  season:'spring', n:'The Thaw',
+   t:'The first day anybody admits winter is over. Half of it is a lie and everybody agrees to it.',
+   ask:{item:'Milk', n:3}, gift:['Bread','Berries'],
+   line:'The ground has gone soft overnight and everybody is pretending that settles it.'},
 ];
 function festivalToday(){
   const s=season();
@@ -7563,11 +8250,27 @@ function openFestival(){
   }else{
     body='<div class="hint">You have done your part. Go and enjoy it.</div>';
   }
+  const at=arcTaskToday();
+  S.arcDone=S.arcDone||{};
   OR('<h3>'+f.n+'</h3>'
     +'<div class="hint" style="margin-bottom:6px;">'+f.t+'</div>'
     +'<div class="hint" style="margin-bottom:10px;font-style:italic;">'+f.line+'</div>'
     +body
+    +(at?('<h3 style="font-size:14px;margin:16px 0 6px;">'+esc(arcNow()?arcNow().n:'Yours')+'</h3>'
+      +'<div class="row"><div style="min-width:0;"><strong>'+esc(at.t)+'</strong>'
+      +(S.arcDone[at.key]?('<div class="hint">'+esc(at.s)+'</div>')
+        :'<div class="hint">Only you would think of it.</div>')+'</div>'
+      +(S.arcDone[at.key]?'<span class="hint">\u2713</span>'
+        :'<button class="primary" data-arc="'+at.key+'">Do it</button>')+'</div>'):'')
     +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-arc]').forEach(b=>b.onclick=async()=>{
+    S.arcDone=S.arcDone||{};
+    S.arcDone[b.dataset.arc]=true;
+    S.standing+=4;
+    (f.gift||[]).forEach(it=>bagAdd(it,1));
+    SFX.win();await save();
+    openFestival();
+  });
   const g=document.getElementById('giveB');
   if(g)g.onclick=async()=>{
     const want=f.ask;
@@ -7594,6 +8297,48 @@ function openFestival(){
   };
   document.getElementById('closeB').onclick=close;
   return true;
+}
+
+/* ---- what the day asks of you in particular ---- */
+const ARC_TASKS={
+  mending:{
+    stonesoup:{t:'Bring the pot something nobody else will',s:'You put in the thing you were saving. Kayla notices and says nothing, which is how she says a lot.'},
+    founders :{t:'Read a name nobody claimed',s:'There is a name on the list with no family left to read it. You read it. It is the first time your voice has carried here.'},
+    freedom  :{t:'Burn something of your own',s:'You wrote it down before you came \u2014 what you owed, and to whom. It goes on the fire with everybody else\u2019s.'},
+    lantern  :{t:'Light the window of an empty house',s:'One cottage has nobody in it. You light it anyway. In the morning somebody has left bread on the step.'},
+  },
+  welcome:{
+    stonesoup:{t:'Find out who started the pot',s:'Nobody will say. Three people tell you it was somebody else. The soup is very good.'},
+    founders :{t:'Ask whose cottage yours was',s:'Rachel tells you the name, finally, standing at the back. \u201cShe would have liked you having it.\u201d'},
+    longday  :{t:'Sit in the seat they keep free',s:'You sit in it. Nobody remarks on it. Somebody refills your cup without asking.'},
+    quiet    :{t:'Break the quiet for one person',s:'You knock on one door on the day nobody knocks. They were hoping somebody would.'},
+  },
+  founding:{
+    founders :{t:'Add a name that is not dead yet',s:'You say, out loud, that the list should have the living on it too. Half the green disagrees. The half that agrees is louder.'},
+    freedom  :{t:'Put the first post in on the day',s:'Nothing is owed here. So the thing you build is owed to nobody either. Somebody points that out and it lands.'},
+    harvest  :{t:'Feed the people who helped',s:'You cook for whoever carried timber. It is a short list and a long evening.'},
+    thaw     :{t:'Break ground while it is still hard',s:'Too early, everybody says. You do it anyway. Andrew turns up with a second spade.'},
+  },
+  reckoning:{
+    freedom  :{t:'Ask what the last debt was',s:'Heather tells you. It was not money. It was a favour somebody held over somebody for eleven years.'},
+    founders :{t:'Count the names',s:'You count them. There are more than there should be for a valley this size. Nobody has an answer you like.'},
+    quiet    :{t:'Sit the whole day out',s:'You do nothing for an entire day, on purpose, with everybody. It is harder than any work you have done here.'},
+    lantern  :{t:'Find the window nobody lights',s:'One window stays dark every year. You find out whose it was. You leave it dark, and you understand why.'},
+  },
+  keeping:{
+    stonesoup:{t:'Put in without being seen',s:'You add yours when nobody is looking. Somebody sees. They do not say. That is the deal.'},
+    longday  :{t:'Bring the thing you make best',s:'You bring the one you were proudest of. It goes in under everything else and gets eaten without ceremony. It is perfect.'},
+    harvest  :{t:'Take the day off the work',s:'You do not go to the workshop. It is the first day since you arrived. It is fine. The work is still there.'},
+    lantern  :{t:'Make the lanterns',s:'Every window in the valley is lit with something you made. Nobody says so. You count them from the hill.'},
+  },
+};
+function arcTaskToday(){
+  const st=story();if(!st.arc)return null;
+  const f=festivalToday();if(!f)return null;
+  const set=ARC_TASKS[st.arc];if(!set)return null;
+  const task=set[f.id];if(!task)return null;
+  const key='arc-'+st.arc+'-'+f.id+'-'+Math.floor((S.day-1)/56);
+  return Object.assign({key},task);
 }
 /* ---- what your standing changes about the place ---- */
 const STANDING_MARKS=[
@@ -7686,6 +8431,201 @@ const NIGHT_WORDS=[
   'You are asleep before you have finished thinking about it.',
   'The night does what nights do.',
 ];
+
+/* ============================================================
+   WHY YOU CAME — somebody meets you at the gate, and what you
+   tell them decides what the year turns out to be about.
+   ============================================================ */
+const ASKS=[
+  {q:'What brought you up the valley road?',
+   a:[{k:'left',   t:'I left somewhere that had stopped working.'},
+      {k:'sent',   t:'Somebody wrote to me and said come.'},
+      {k:'lost',   t:'I was owed nothing and had nowhere else.'},
+      {k:'return', t:'I was born near here. I have come back.'}]},
+  {q:'When a thing needs doing and nobody has asked you, what do you do?',
+   a:[{k:'do',     t:'Do it, and say nothing about it.'},
+      {k:'ask',    t:'Find whoever it belongs to and ask first.'},
+      {k:'gather', t:'Get two or three others and make an afternoon of it.'},
+      {k:'watch',  t:'Watch a while. Most things sort themselves.'}]},
+  {q:'What do you want out of a year here?',
+   a:[{k:'quiet',  t:'To be left alone and get good at something.'},
+      {k:'people', t:'To know everybody by name and be known back.'},
+      {k:'build',  t:'To leave something standing that was not here before.'},
+      {k:'know',   t:'To find out what this place actually is.'}]},
+];
+const ARCS={
+  mending:{n:'The Mending',
+    t:'You came here with something broken behind you, and the valley is quietly handing you things to fix.',
+    open:'You did not come here to start again. You came here because starting again was the only thing left. Nobody asks about it. That is the first kindness.',
+    want:['do','left','lost'],
+    beats:[
+      {day:3,  t:'A gate off its hinge',        s:'Somebody has propped the orchard gate with a stone. Nobody mentions it. It stays propped.'},
+      {day:9,  t:'The first thing you fixed',   s:'You put the gate right. By evening two more broken things have appeared near your door, without a word.'},
+      {day:18, t:'What Patrick keeps',          s:'Patrick shows you a shed of things too broken to use and too good to burn. \u201cThought you might want the practice,\u201d he says.'},
+      {day:30, t:'Somebody asks outright',      s:'For the first time somebody asks you to mend something, out loud, in front of others.'},
+      {day:44, t:'The thing you did not fix',   s:'You find the stone that propped the gate, kept on a windowsill. Somebody wanted to remember it that way.'},
+    ]},
+  welcome:{n:'The Welcome',
+    t:'You were sent for, and the valley is working out what it sent for.',
+    open:'Somebody wrote to you. You still have the letter. The handwriting is not one you know, and nobody here will admit to it.',
+    want:['sent','people','ask'],
+    beats:[
+      {day:4,  t:'Whose hand was it',           s:'You show the letter to three people. All three say it is not theirs, and all three look at it a beat too long.'},
+      {day:11, t:'A place already set',         s:'At the table there is a seat with nothing on it, and everybody sits around it without thinking.'},
+      {day:22, t:'The one who left',            s:'Somebody had your cottage before you. Nobody says the name. They say \u201cbefore\u201d and change the subject.'},
+      {day:34, t:'A second letter',             s:'Another letter, same hand. Two words: \u201cStill here?\u201d'},
+      {day:48, t:'Who writes the letters',      s:'You find out. It is nobody dramatic. It is somebody who noticed the valley was one person short.'},
+    ]},
+  founding:{n:'The Founding',
+    t:'You want to leave something standing, and the valley has half a mind to let you.',
+    open:'You have already looked at the empty ground east of the river and thought about it. That is how these things start.',
+    want:['build','do','return'],
+    beats:[
+      {day:5,  t:'The empty ground',            s:'Nobody farms the flat by the river. When you ask why, you get four different answers and none of them agree.'},
+      {day:14, t:'Andrew draws it out',         s:'Andrew sketches something on the back of a feed sack. It is more ambitious than either of you will admit.'},
+      {day:26, t:'The first post',              s:'You put one post in the ground. Two people come and stand near it. Nobody says what it is for yet.'},
+      {day:38, t:'Others start bringing wood',  s:'It stops being your idea somewhere around now, and you do not notice the day it happens.'},
+      {day:52, t:'What it gets called',         s:'It gets a name. Not the one you had in mind. Better.'},
+    ]},
+  reckoning:{n:'The Reckoning',
+    t:'You came to find out what this place is. It has noticed you asking.',
+    open:'A valley with no money, no rent and no locks either works or it is hiding something. You intend to find out which.',
+    want:['know','watch','lost'],
+    beats:[
+      {day:6,  t:'Nobody keeps a ledger',       s:'You ask who keeps count of what is given. Everybody assumes it is somebody else. Nobody is troubled by this.'},
+      {day:13, t:'The winter they do not discuss',s:'Somebody mentions a winter, then stops. Later Heather says: \u201cWe were not always like this.\u201d'},
+      {day:25, t:'What is under the hill',      s:'The door in the trees is older than the village. Nobody built it. Nobody will say that out loud.'},
+      {day:37, t:'Zak tells you straight',      s:'Zak sits you down. \u201cYou want the honest answer? We chose it. Every year we choose it again. That is all it is.\u201d'},
+      {day:50, t:'Your turn to choose',         s:'The year turns. Somebody asks whether you are staying. It is not a formality.'},
+    ]},
+  keeping:{n:'The Keeping',
+    t:'You wanted to be left alone and get good at something. The valley is patient about it.',
+    open:'You would rather have a trade than a conversation. That is allowed here, and nobody will make it strange.',
+    want:['quiet','do','left'],
+    beats:[
+      {day:5,  t:'Left to it',                  s:'Three days and nobody has asked you a single question. It is the most restful thing that has happened to you in years.'},
+      {day:15, t:'Somebody notices the work',   s:'What you made turns up in somebody else\u2019s hands. They do not know it was you. You do not correct them.'},
+      {day:27, t:'The apprentice problem',      s:'One of the children starts turning up where you work and saying nothing. This continues.'},
+      {day:40, t:'You teach without meaning to',s:'You catch yourself explaining something out loud and realise you have been doing it for a week.'},
+      {day:54, t:'Good at something',           s:'Somebody comes a long way to ask you specifically. That is what it looks like when it has worked.'},
+    ]},
+};
+function arcFrom(answers,career){
+  /* score every arc by what you said and what you took on */
+  const score={};
+  Object.keys(ARCS).forEach(k=>{score[k]=0;});
+  (answers||[]).forEach(a=>{
+    Object.keys(ARCS).forEach(k=>{
+      if(ARCS[k].want.indexOf(a)>=0)score[k]+=2;
+    });
+  });
+  /* the trade nudges it */
+  const lean={smith:'founding',carpenter:'founding',builder:'founding',
+    healer:'mending',herbalist:'mending',
+    teacher:'welcome',cook:'welcome',baker:'welcome',
+    warden:'reckoning',ranger:'reckoning',ground:'reckoning',
+    weaver:'keeping',miller:'keeping',beekeep:'keeping',woodsman:'keeping'};
+  if(career&&lean[career])score[lean[career]]+=1;
+  let best='welcome',bv=-1;
+  Object.keys(score).forEach(k=>{if(score[k]>bv){bv=score[k];best=k;}});
+  return best;
+}
+function story(){S.story=S.story||{arc:null,answers:[],seen:[],day0:1};return S.story;}
+function arcNow(){const st=story();return st.arc?ARCS[st.arc]:null;}
+function storyDay(){return Math.max(1,S.day-(story().day0||1)+1);}
+function checkStory(){
+  const A=arcNow();if(!A)return null;
+  const st=story();
+  const d=storyDay();
+  const next=A.beats.find(b=>d>=b.day&&st.seen.indexOf(b.t)<0);
+  if(!next)return null;
+  st.seen.push(next.t);
+  save();
+  return next;
+}
+function openStoryBeat(b){
+  paused=true;
+  const A=arcNow();
+  OR('<h3>'+esc(b.t)+'</h3>'
+    +'<div class="hint" style="margin-bottom:10px;">'+esc(A?A.n:'')+'</div>'
+    +'<p class="sub">'+esc(b.s)+'</p>'
+    +'<div class="acts"><button class="primary" id="closeB">Go on</button></div>');
+  document.getElementById('closeB').onclick=close;
+}
+function openStory(){
+  paused=true;
+  const A=arcNow();
+  const st=story();
+  if(!A){
+    OR('<h3>Your year</h3><p class="sub">Nothing has settled yet.</p>'
+      +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+    document.getElementById('closeB').onclick=close;return;
+  }
+  const d=storyDay();
+  const done=A.beats.filter(b=>st.seen.indexOf(b.t)>=0);
+  const next=A.beats.find(b=>st.seen.indexOf(b.t)<0);
+  OR('<h3>'+esc(A.n)+'</h3>'
+    +'<p class="sub">'+esc(A.t)+'</p>'
+    +'<div class="card"><div class="hint">'+esc(A.open)+'</div></div>'
+    +(done.length?('<h3 style="font-size:14px;margin:14px 0 6px;">So far</h3>'
+      +done.map(b=>'<div class="row"><div style="min-width:0;"><strong>'+esc(b.t)+'</strong>'
+        +'<div class="hint">'+esc(b.s)+'</div></div></div>').join('')):'')
+    +(next?('<div class="hint" style="margin-top:12px;">Something else is coming, in its own time.</div>')
+          :'<div class="hint" style="margin-top:12px;">That is the whole of it. What happens next is yours.</div>')
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.getElementById('closeB').onclick=close;
+}
+/* ---- the greeting ---- */
+function openGreeting(step){
+  step=step||0;
+  paused=true;
+  const st=story();
+  const greeter=FOLK.find(f=>f.id==='zak')||FOLK.find(f=>!f.child)||{name:'somebody'};
+  const gname=firstName(greeter.name);
+  if(step===0){
+    OR('<h3>Somebody is waiting at the gate</h3>'
+      +'<p class="sub"><strong>'+esc(gname)+'</strong> is sat on the wall with a cup of something, '
+      +'as though they have been there a while and do not mind either way.</p>'
+      +'<div class="card"><div class="hint">\u201cYou will be the new one. Nobody sent me, I just like being first. '
+      +'Come on \u2014 three questions and then I will leave you alone about it.\u201d</div></div>'
+      +'<div class="acts"><button class="primary" id="goB">Go on then</button></div>');
+    document.getElementById('goB').onclick=()=>openGreeting(1);
+    return;
+  }
+  const qi=step-1;
+  if(qi<ASKS.length){
+    const Q=ASKS[qi];
+    OR('<h3>'+esc(gname)+' asks</h3>'
+      +'<p class="sub">'+esc(Q.q)+'</p>'
+      +Q.a.map(o=>'<div class="row"><div style="min-width:0;">'+esc(o.t)+'</div>'
+        +'<button data-a="'+o.k+'">Say it</button></div>').join('')
+      +'<div class="hint" style="margin-top:10px;">'+(qi+1)+' of '+ASKS.length+'</div>');
+    document.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{
+      st.answers.push(b.dataset.a);
+      openGreeting(step+1);
+    });
+    return;
+  }
+  /* they have answered — settle the arc and say something about it */
+  st.arc=arcFrom(st.answers,careerOf(S.claimed));
+  st.day0=S.day;
+  const A=ARCS[st.arc];
+  save();
+  OR('<h3>'+esc(gname)+' looks at you for a moment</h3>'
+    +'<div class="card"><div class="hint">\u201c'+({
+      mending:'You have got the look of somebody who has been holding something together for a long while. Put it down a bit.',
+      welcome:'Somebody has been waiting for you, whether they have said so or not.',
+      founding:'You are already looking past me at the ground. I know that look.',
+      reckoning:'You want to know how it works. Good. Ask everybody, they all answer differently.',
+      keeping:'You would rather be getting on with it than stood here. I will let you.'
+    })[st.arc]+'\u201d</div></div>'
+    +'<h3 style="font-size:15px;margin:14px 0 6px;">'+esc(A.n)+'</h3>'
+    +'<p class="sub">'+esc(A.open)+'</p>'
+    +'<div class="hint">Whatever this year turns out to be about, it starts now. '
+    +'You can look back at it any time from the Menu.</div>'
+    +'<div class="acts"><button class="primary" id="doneB">Get on with it</button></div>');
+  document.getElementById('doneB').onclick=close;
+}
 /* ================= BLUEPRINTS ================= */
 const PLANS=[
   {id:'coop',   name:'Chicken coop',  cost:{Wood:20,Fibre:8},          w:4,h:3,
@@ -7905,16 +8845,36 @@ function openTableInner(){
   document.querySelectorAll('[data-game]').forEach(b=>b.onclick=()=>openGames(b.dataset.game));
   document.querySelectorAll('[data-give]').forEach(b=>{b.onclick=async()=>{
     const it=mine[parseInt(b.dataset.give)];
-    if(!bagTake(it.item,1))return;
+    if(!it){toast('That has gone already.');openTable();return;}
+    if(!bagTake(it.item,1)){toast('You have none of that to leave.');return;}
+    let wentLocal=false;
     if(shared){
-      const err=await NET.put(it.item,1);
-      if(err){bagAdd(it.item,1);toast(err);return;}
+      let err=null;
+      try{err=await NET.put(it.item,1);}catch(e){err='the valley did not answer';}
+      if(err){
+        /* the table is the table — if the network is being difficult,
+           it still goes down, it just does not travel */
+        S.shared=S.shared||[];S.shared.push(it.item);
+        if(S.shared.length>6)S.shared.shift();
+        wentLocal=true;
+      }
     }else{
       S.shared=S.shared||[];S.shared.push(it.item);if(S.shared.length>6)S.shared.shift();
     }
     S.standing++;
-    FOLK.forEach(f=>{if(f.likes.indexOf(it.item)>=0)S.folk[f.id].friend=Math.min(20,S.folk[f.id].friend+1);});
-    await save();toast('Left on the table. Somebody will be glad of it.');openTable();
+    /* somebody who likes it thinks a bit better of you */
+    FOLK.forEach(f=>{
+      const likes=f.likes||[];
+      if(likes.indexOf(it.item)<0)return;
+      S.folk[f.id]=S.folk[f.id]||{friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};
+      S.folk[f.id].friend=Math.min(20,(S.folk[f.id].friend||0)+1);
+    });
+    SFX.ok();
+    await save();
+    toast(wentLocal
+      ? ('You leave the '+it.item.toLowerCase()+' on the table. It will not travel to the others just now, but it is there.')
+      : ('You leave the '+it.item.toLowerCase()+' on the table. Somebody will be glad of it.'));
+    openTable();
   };});
   document.querySelectorAll('[data-take]').forEach(b=>{b.onclick=async()=>{
     const item=b.dataset.take;
@@ -8108,6 +9068,10 @@ function openValley(){
     +'<div class="hint">Text this to anyone you want in. They type it once and they are in for good.</div>'
     +'<div class="acts"><button id="cpy">Copy code</button></div></div>'
     +(notes?('<h3 style="font-size:14px;margin:14px 0 6px;">On your gate</h3>'+notes):'')
+    +(NET.ready()?('<div class="row" style="margin-top:10px;"><div style="min-width:0;">'
+      +'<strong>Write to somebody</strong>'
+      +'<div class="hint">A letter on their gate, for whenever they next come out.</div></div>'
+      +'<button class="primary" id="writeB">Write</button></div>'):'')
     +'<h3 style="font-size:14px;margin:14px 0 6px;">Everyone here</h3>'+rows
     +(deeds?('<h3 style="font-size:14px;margin:14px 0 6px;">Lately</h3>'+deeds):'')
     +'<div class="acts"><button id="syncB">Refresh</button><button id="outB">Leave valley</button>'
@@ -8116,6 +9080,8 @@ function openValley(){
     try{navigator.clipboard.writeText(NET.code);toast('Code copied');}catch(e){toast(NET.code);}
   };
   document.querySelectorAll('[data-visit]').forEach(b=>b.onclick=()=>openVisit(b.dataset.visit));
+  const wb=document.getElementById('writeB');
+  if(wb)wb.onclick=()=>openWrite(null,null,openValley);
   document.getElementById('syncB').onclick=async()=>{await NET.pull();openValley();};
   document.getElementById('outB').onclick=()=>{NET.leave();close();toast('Back to your own valley.');};
   document.getElementById('closeB').onclick=close;
@@ -8181,6 +9147,9 @@ function openMenu(){
       +'<div class="hint">'+standingWord()+'</div>'
       +(nextMark()?('<div class="hint">Next: '+esc(nextMark().n)+'</div>'):'')
       +'</div><button id="standB">Look</button></div>'
+    +(story().arc?('<div class="row"><div style="min-width:0;"><strong>'+esc(arcNow().n)+'</strong>'
+      +'<div class="hint">'+esc(arcNow().t)+'</div></div>'
+      +'<button id="storyB">Look back</button></div>'):'')
     +'<div class="row"><div style="min-width:0;"><strong>The deep</strong>'
       +'<div class="hint">'+((S.dgDepth||0)?('You have been as far as level '+S.dgDepth+'.'):'You have not been down yet.')+'</div>'
       +'<div class="hint">'+Object.keys(S.bestiary||{}).length+' kinds met'
@@ -8216,6 +9185,7 @@ function openMenu(){
   };
   const sb=document.getElementById('standB');if(sb)sb.onclick=openStanding;
   const bb=document.getElementById('bestB');if(bb)bb.onclick=openBestiary;
+  const stb=document.getElementById('storyB');if(stb)stb.onclick=openStory;
   const fb=document.getElementById('festB');if(fb)fb.onclick=()=>openFestival();
   document.getElementById('closeB').onclick=close;
 }
@@ -8285,6 +9255,8 @@ async function doSleepInner(){
   const wLines=applyWeather();
   const fest=festivalToday();
   if(fest)wLines.unshift(fest.n+'. '+fest.line);
+  const beat=checkStory();
+  if(beat)setTimeout(()=>{close();openStoryBeat(beat);},900);
   buildCollision();                    /* what regrew overnight is solid again */
   checkGifts();
   const stock=morningStock();
@@ -8546,6 +9518,7 @@ function loopBody(ts){
   buildSprites();
   resize();updateHud();drawToolbar();
   if(!S.started)openIntro();
+  else if(!story().arc&&S.started)setTimeout(()=>openGreeting(0),700);
   else if(S.dg&&S.dg.on){S.scene='deep';paused=false;}
   else {paused=false;setTimeout(showReports,900);}
   requestAnimationFrame(loop);
