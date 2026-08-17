@@ -424,7 +424,7 @@ function newGame(){
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
     delve:null, reports:[], stock:{}, inside:null, room:'main', ipx:0, ipy:0, gear:{}, said:[],
-    taughtCards:false, carryDye:null, finish:{}, chests:{},
+    taughtCards:false, carryDye:null, finish:{}, chests:{}, lent:{}, owed:0,
     relics:[], worn:{}, bonds:{}, bestiary:{}, lobby:null, arcDone:{},
     story:{arc:null,answers:[],seen:[],day0:1}, lobby:null,
     weather:'fair', festDone:{}, festCatch:{},
@@ -445,7 +445,7 @@ async function load(){
       S.kit=S.kit||{hoe:0,axe:0,pick:0,can:0};
       if(S.inside===undefined)S.inside=null;
       S.myStuff=S.myStuff||{};S.room=S.room||'main';S.carrying=S.carrying||null;
-      S.finish=S.finish||{};S.chests=S.chests||{};
+      S.finish=S.finish||{};S.chests=S.chests||{};S.lent=S.lent||{};
       /* older saves could stash things under an empty room — clear those out */
       ['myStuff','finish','chests'].forEach(k=>{
         if(!S[k])return;
@@ -2087,7 +2087,8 @@ function draw(){
       const sp=buildingSprite(b);
       ctx.drawImage(sp,X-12,Y-26);
     }
-    /* windows */
+    /* windows — only on things with walls */
+    if(!b.apiary){
     const win=windowSprite(lit);
     for(let i=0;i<Math.max(1,b.w-2);i++){
       const wx=X+i*TILE+13,wy=Y+Math.round(H/2)-10;
@@ -2100,6 +2101,7 @@ function draw(){
     /* door */
     const dr=doorSprite();
     ctx.drawImage(dr,b.door.x*TILE+4,Y+H-dr.height+4);
+    }
     const nameOn=b.label||(b.cot?cottageFamily(b.id):'');
     if(nameOn){
       ctx.font='10px Inter';ctx.textAlign='center';
@@ -2146,6 +2148,7 @@ function draw(){
       }
     }
   }}));
+  if(typeof drawFestGround==='function')drawFestGround();
   TREES.forEach(([x,y])=>layer.push({y:(y+1)*TILE,f:()=>{
     if(SPR.tree)ctx.drawImage(SPR.tree,x*TILE-8+Math.sin(Date.now()/1900+x)*1.2,y*TILE-20);
   }}));
@@ -2230,6 +2233,10 @@ const CHILD_DOING=['off on the bike','down at the river','chalking something on 
 const EARLY=['stoking the fire','out before anyone else','fetching water','feeding the hens',
   'stood in the doorway with a cup','looking at the weather'];
 function folkDoing(f){
+  {
+    const fd=festDoing(f);
+    if(fd)return fd;
+  }
   const h=S.min/60;
   if(h<8&&h>=5)return EARLY[Math.abs(Math.floor(S.min/40)+hashStr(f.id))%EARLY.length];
   if(f.child){
@@ -8066,6 +8073,28 @@ function applyWeather(){
   }
   return lines;
 }
+/* on the Sowing and the Thaw, the ground they are stood on gets turned */
+function drawFestGround(){
+  /* called inside the world transform, so these are world coordinates */
+  const fe=(typeof festivalToday==='function')?festivalToday():null;
+  if(!fe)return;
+  if(fe.id!=='sowing'&&fe.id!=='thaw')return;
+  const spot=festSpot();if(!spot)return;
+  const done=Math.max(0,Math.min(1,(S.min/60-8)/8));
+  const rows=Math.floor(done*7);
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<9;c++){
+      const px=(spot.x-4+c)*TILE, py=(spot.y+2+r)*TILE;
+      ctx.fillStyle='#6B5433';ctx.fillRect(px+2,py+8,TILE-4,TILE-14);
+      ctx.fillStyle='#5A4429';
+      for(let f2=0;f2<3;f2++)ctx.fillRect(px+3,py+10+f2*5,TILE-6,2);
+      if(r<rows-2){
+        ctx.fillStyle='#4E8B4E';
+        ctx.fillRect(px+8,py+12,2,5);ctx.fillRect(px+18,py+14,2,4);
+      }
+    }
+  }
+}
 function drawWeather(){
   const w=S.weather;
   if(!w||w==='fair')return;
@@ -8432,6 +8461,82 @@ const NIGHT_WORDS=[
   'The night does what nights do.',
 ];
 
+
+/* ============================================================
+   THE DAY ITSELF — what they are doing, and what they say about it.
+   ============================================================ */
+const FEST_DOING={
+  sowing :['putting something in the ground','pressing a row flat with a boot','arguing about spacing',
+           'sowing a line and losing count','showing a child how deep','carrying seed in a fold of their shirt'],
+  thaw   :['testing the ground with a thumb','breaking the crust with a heel','saying it is too early',
+           'saying it is about right','turning one spadeful and stopping'],
+  stonesoup:['putting something in the pot','stirring, badly','guarding the pot from Conrad',
+           'pretending not to have put anything in','tasting it and saying nothing'],
+  founders:['reading a name off the list','standing very still','tidying the stones',
+           'holding somebody\u2019s arm','not saying anything at all'],
+  catch  :['stood in the shallows','untangling a line','claiming they had a big one',
+           'watching the float and not blinking','counting somebody else\u2019s catch'],
+  longday:['carrying something out to the table','eating standing up','moving a bench again',
+           'refilling cups nobody asked about','asleep in the sun, briefly'],
+  freedom:['feeding paper to the fire','watching the fire and not talking','holding a torn page',
+           'explaining what the day is, to a child','saying it never gets easier'],
+  harvest:['carrying more than they should','stacking a crate wrong','eating an apple they have not earned',
+           'admiring somebody else\u2019s row','sitting down for once'],
+  lantern:['lighting a window','carrying a lantern with both hands','cupping a flame out of the wind',
+           'counting the lit windows'],
+  quiet  :['sat doing absolutely nothing','watching the weather','not being asked anything',
+           'reading the same page twice'],
+};
+const FEST_SAYS={
+  sowing:["Everybody goes in at once. It is not efficient. It is not meant to be.",
+          "Whatever you put in today, somebody else waters when you are ill. That is the whole of it.",
+          "My grandmother sowed this row. Same morning, every year.",
+          "Do not do it neatly. Nobody has ever done it neatly."],
+  thaw:["Too early. Always too early. We do it anyway.",
+        "First soft ground of the year. It goes to your head a bit.",
+        "Winter is not done. Do not tell the others I said so."],
+  stonesoup:["A pot, some water and a stone. By dark it feeds everyone. Work that one out.",
+             "Nobody says what they put in. That is deliberate.",
+             "Conrad started it. Conrad will deny starting it."],
+  founders:["They cleared this ground and never ate off it. Least we can do is say the names.",
+            "It gets longer every year. That is not a sad thing, particularly.",
+            "There is one on there with nobody left to read it. Somebody always does."],
+  catch:["Everybody fishes. Whoever brings the most feeds the rest of us.",
+         "I have been beaten by a child at this three years running.",
+         "It is not about the fish. It is a bit about the fish."],
+  longday:["Table goes out at noon and does not come back in till somebody carries it.",
+           "Eat standing up. Everybody does.",
+           "This is the one I look forward to. Do not tell the others."],
+  freedom:["Last debt in this valley got torn up and burned. Nobody has written one since.",
+           "It was not money. It was a favour held over somebody for eleven years.",
+           "We burn paper so we remember what it cost to stop."],
+  harvest:["Board comes down. Nothing asked of anybody for one day.",
+           "Eat what you like. It is all ours and none of it is anybody's.",
+           "Sit down. Go on. One day."],
+  lantern:["Every window lit. Shortest evening of the year and we make a job of it.",
+           "One stays dark. You will work out which and you will not ask."],
+  quiet:["Board is turned to the wall. Nothing is asked and nothing is given.",
+         "Hardest day of the year, this one. Doing nothing on purpose.",
+         "Sit with it. That is the whole instruction."],
+};
+function festDoing(f){
+  const fe=festivalToday();
+  if(!fe)return null;
+  const pool=FEST_DOING[fe.id];
+  if(!pool)return null;
+  /* spread them across the pool so the whole green is not doing one thing */
+  const i=FOLK.indexOf(f);
+  const spread=(i<0?hashStr(f.id):i)+Math.floor(S.min/180);
+  return pool[spread%pool.length];
+}
+function festSays(f){
+  const fe=festivalToday();
+  if(!fe)return null;
+  const pool=FEST_SAYS[fe.id];
+  if(!pool)return null;
+  const i=FOLK.indexOf(f);
+  return pool[((i<0?hashStr(f.id):i))%pool.length];
+}
 /* ============================================================
    WHY YOU CAME — somebody meets you at the gate, and what you
    tell them decides what the year turns out to be about.
@@ -8678,8 +8783,38 @@ function placeHere(x,y){
   drawToolbar();save();
 }
 
+
+/* ---- the seed library lends. that is the whole point of it. ---- */
+function seedLent(){S.lent=S.lent||{};return S.lent;}
+function seedsThisSeason(){
+  const s=season().id;
+  return Object.keys(CROPS).filter(k=>CROPS[k].seasons.indexOf(s)>=0);
+}
+function lendKey(cropId){return cropId+'-'+Math.floor((S.day-1)/SEASON_DAYS);}
+function canLend(cropId){
+  /* a handful of each thing that will grow, once a season */
+  return !seedLent()[lendKey(cropId)];
+}
+function takeSeeds(cropId){
+  const c=CROPS[cropId];if(!c)return;
+  if(!canLend(cropId)){toast('You have had your handful of those this season.');SFX.no();return;}
+  seedLent()[lendKey(cropId)]=true;
+  bagAdd(c.seed,3);
+  S.owed=(S.owed||0)+1;
+  SFX.pick();save();
+  toast('Three '+c.seed.toLowerCase()+'. Bring some back when you have them \u2014 or do not, and grow something anyway.',5000);
+}
 function openSupply(){
   paused=true;
+  const lendRows=seedsThisSeason().map(k=>{
+    const c=CROPS[k];
+    const free=canLend(k);
+    return '<div class="row"><div style="min-width:0;"><strong>'+esc(c.seed)+'</strong>'
+      +'<div class="hint">'+esc(c.name)+' — '+c.days+' days to grow</div>'
+      +'<div class="hint">'+(free?'a handful, freely given':'you have had yours this season')+'</div></div>'
+      +(free?'<button class="primary" data-lend="'+k+'">Take three</button>'
+            :'<span class="hint">✓</span>')+'</div>';
+  }).join('');
   const feedRows=[
     {item:'Feed',    cost:{Wheat:2},        note:'A sack of feed. The animals will tell you when it runs out.'},
     {item:'Fibre',   cost:{Wheat:1},        note:'Twisted from straw. Everything needs a bit of it.'},
@@ -8709,6 +8844,11 @@ function openSupply(){
       +'</div>';
   }).join('');
   OR('<h3>The Supply House</h3>'
+    +'<h3 style="font-size:14px;margin:6px 0 6px;">The seed library</h3>'
+    +'<div class="hint" style="margin-bottom:8px;">Nobody is counting. Take what will grow this season '
+    +'and put some back when you have it — that is how the shelves stay full.</div>'
+    +lendRows
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">Swapping</h3>'
     +'<div class="hint" style="margin-bottom:10px;">Nothing is sold here. Bring back what you grew and take what you need — '
     +'the plans are free to anyone who will use them.</div>'
     +'<h3 style="font-size:14px;margin:14px 0 6px;">Feed &amp; seed</h3>'+feedRows
@@ -8716,6 +8856,9 @@ function openSupply(){
     +'<div class="hint" style="margin-bottom:8px;">Choose one and you will carry the frame out with you — face a clear patch of ground and press E to set it down.</div>'
     +planRows
     +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-lend]').forEach(b=>b.onclick=()=>{
+    takeSeeds(b.dataset.lend);openSupply();
+  });
   document.querySelectorAll('[data-swap]').forEach(b=>{if(b.disabled)return;
     b.onclick=()=>{
       const cost=JSON.parse(b.dataset.c);
@@ -8893,6 +9036,29 @@ function talkGameRow(f){
     +'<button data-play-games="'+f.id+'">Play</button></div>';
 }
 function openTalk(f){
+  /* on a festival day it is the only thing anybody wants to discuss */
+  {
+    const fs=festSays(f);
+    if(fs){
+      const fe=festivalToday();
+      paused=true;
+      const d=S.folk[f.id]||{friend:0};
+      OR('<div style="display:flex;gap:12px;align-items:flex-start;">'
+        +'<canvas class="talkface" width="34" height="34" style="width:34px;height:34px;image-rendering:pixelated;"></canvas>'
+        +'<div><h3 style="margin:0;">'+esc(firstName(f.name))+'</h3>'
+        +'<div class="hint">'+esc(fe.n)+'</div></div></div>'
+        +'<div class="card" style="margin-top:10px;"><div class="hint" style="font-style:italic;">“'
+        +esc(fs)+'”</div></div>'
+        +'<div class="hint" style="margin-top:8px;">'+esc(firstName(f.name))+' is '+esc(folkDoing(f))+'.</div>'
+        +'<div class="acts"><button id="moreB">Talk about something else</button>'
+        +'<button class="primary" id="closeB">Leave them to it</button></div>');
+      paintTalkFace(f.id);
+      document.getElementById('closeB').onclick=close;
+      document.getElementById('moreB').onclick=()=>{S.skipFest=f.id;openTalk(f);};
+      if(S.skipFest!==f.id)return;
+      S.skipFest=null;
+    }
+  }
   paused=true;
   const d=S.folk[f.id];
   if(d.askedDay!==S.day){d.askedDay=S.day;d.asked=[];}
