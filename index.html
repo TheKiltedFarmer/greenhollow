@@ -84,6 +84,9 @@
     .slot .n{font-size:10px;top:1px;right:3px;padding:0 4px;}
     .slot .key{font-size:8px;top:1px;left:3px;}
     .slot.sel{transform:translateY(-3px);}
+  .slot.off .lbl{color:var(--rose);}
+  .slot .more{position:absolute;bottom:2px;right:4px;font-size:9px;color:var(--amber);
+              background:rgba(10,14,12,0.7);border-radius:3px;padding:0 3px;}
     #hint{bottom:calc(186px + var(--pad-b));font-size:12px;padding:5px 12px;}
     .overlay{padding:12px 10px calc(28px + var(--pad-b));}
     .overlay.battlebar{padding:0 8px calc(10px + var(--pad-b));}
@@ -424,7 +427,8 @@ function newGame(){
     claimed:null,          /* which villager is you */
     people:{},             /* renames, restyles and folk that players have added */
     delve:null, reports:[], stock:{}, inside:null, room:'main', ipx:0, ipy:0, gear:{}, said:[],
-    taughtCards:false, carryDye:null, finish:{}, chests:{}, lent:{}, owed:0,
+    seedPick:null,
+    taughtCards:false, carryDye:null, finish:{}, chests:{}, lent:{}, owed:0, toldSeeds:false,
     relics:[], worn:{}, bonds:{}, bestiary:{}, lobby:null, arcDone:{},
     story:{arc:null,answers:[],seen:[],day0:1}, lobby:null,
     weather:'fair', festDone:{}, festCatch:{},
@@ -1427,9 +1431,59 @@ const TOOLS=[
 ];
 function curTool(){return TOOLS[S.tool%TOOLS.length];}
 function cycleTool(d){S.tool=(S.tool+(d||1)+TOOLS.length)%TOOLS.length;drawToolbar();save();}
+function seedsHeld(){
+  return S.bag.filter(x=>SEED_OF[x.item]&&x.n>0).map(x=>x.item);
+}
 function selectedSeed(){
-  const s=S.bag.find(x=>SEED_OF[x.item]&&x.n>0);
-  return s?s.item:null;
+  const held=seedsHeld();
+  if(!held.length)return null;
+  /* the one you chose, if you still have any */
+  if(S.seedPick&&held.indexOf(S.seedPick)>=0)return S.seedPick;
+  /* otherwise prefer something that will actually grow now */
+  const inSeasonOne=held.find(it=>inSeason(SEED_OF[it]));
+  const pick=inSeasonOne||held[0];
+  S.seedPick=pick;
+  return pick;
+}
+function cycleSeed(d){
+  const held=seedsHeld();
+  if(held.length<2){
+    if(!held.length)toast('No seed in the basket. The seed library lends.');
+    else toast('That is the only seed you have.');
+    return;
+  }
+  const cur=selectedSeed();
+  let i=held.indexOf(cur);
+  i=(i+(d||1)+held.length)%held.length;
+  S.seedPick=held[i];
+  const crop=CROPS[SEED_OF[S.seedPick]];
+  SFX.pick();drawToolbar();save();
+  toast(S.seedPick+(crop&&!inSeason(SEED_OF[S.seedPick])?' \u2014 out of season, it will not take':''),2600);
+}
+/* pick a seed from a list, for people who would rather see them all */
+function openSeedPick(){
+  const held=seedsHeld();
+  paused=true;
+  OR('<h3>Which seed?</h3>'
+    +(held.length?'<div class="hint" style="margin-bottom:10px;">'
+       +'What will grow now is marked. The rest will sit in the ground and sulk.</div>'
+       +held.map(it=>{
+         const k=SEED_OF[it];const c=CROPS[k];const ok=inSeason(k);
+         return '<div class="row"><div style="min-width:0;"><strong>'+esc(it)+'</strong>'
+           +'<div class="hint">'+esc(c.name)+' \u00b7 '+c.days+' days'
+           +(ok?' \u00b7 <span style="color:var(--green)">in season</span>'
+               :' \u00b7 <span style="color:var(--rose)">not this season</span>')+'</div></div>'
+           +'<span class="hint" style="margin-right:8px;">'+bagCount(it)+'</span>'
+           +(S.seedPick===it?'<span class="hint">\u2713</span>'
+             :'<button class="primary" data-seed="'+esc(it)+'">Use these</button>')+'</div>';
+       }).join('')
+      :'<div class="hint">Nothing to sow. The seed library will lend you a handful.</div>')
+    +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
+  document.querySelectorAll('[data-seed]').forEach(b=>b.onclick=()=>{
+    S.seedPick=b.dataset.seed;SFX.pick();drawToolbar();save();close();
+    toast('Sowing '+S.seedPick.toLowerCase()+' now.');
+  });
+  document.getElementById('closeB').onclick=close;
 }
 
 /* ================= COLLISION ================= */
@@ -2328,6 +2382,12 @@ function folkPos(f){
 /* ================= INPUT ================= */
 const keys={};let pstep=0,pface=1;
 window.addEventListener('keydown',e=>{
+  /* seeds: [ and ] step through what you are carrying, backslash opens the list */
+  if(!paused&&!S.inside&&!S.fish&&!S.hunt&&!S.battle&&S.scene==='world'){
+    if(e.key==='['){e.preventDefault();cycleSeed(-1);return;}
+    if(e.key===']'){e.preventDefault();cycleSeed(1);return;}
+    if(e.key==='\\'){e.preventDefault();openSeedPick();return;}
+  }
   if(!paused&&!S.inside&&!S.fish&&!S.hunt&&S.scene==='world'&&e.key.toLowerCase()==='g'){
     e.preventDefault();openGear();return;
   }
@@ -2487,11 +2547,15 @@ function drawToolbar(){
   tb.innerHTML=TOOLS.map((t,i)=>{
     const sel=(S.tool%TOOLS.length)===i;
     let n='',lbl=t.name;
+    let more=false,offSeason=false;
     if(t.id==='seed'){const s=selectedSeed();n=s?bagCount(s):0;
-      lbl=s?String(s).replace(/ seeds?$/i,''):'Seeds';}
+      lbl=s?String(s).replace(/ seeds?$/i,''):'Seeds';
+      more=seedsHeld().length>1;
+      offSeason=!!(s&&!inSeason(SEED_OF[s]));}
     if(t.id==='can')n=S.cans;
-    return '<div class="slot'+(sel?' sel':'')+'" data-t="'+i+'">'
+    return '<div class="slot'+(sel?' sel':'')+(offSeason?' off':'')+'" data-t="'+i+'">'
       +'<span class="key">'+(i+1)+'</span>'
+      +(more?'<span class="more">\u25be'+seedsHeld().length+'</span>':'')
       +'<canvas width="44" height="44"></canvas>'
       +'<span class="lbl">'+lbl+'</span>'
       +(n!==''?'<span class="n">'+n+'</span>':'')+'</div>';
@@ -2499,7 +2563,20 @@ function drawToolbar(){
   tb.querySelectorAll('.slot').forEach((el,i)=>{
     const g=el.querySelector('canvas').getContext('2d');
     g.imageSmoothingEnabled=false;drawToolIcon(g,TOOLS[i].id,2.75);
-    el.onclick=()=>{S.tool=i;drawToolbar();save();};
+    el.onclick=()=>{
+      /* tap the seed slot again to choose which seed */
+      if(TOOLS[i].id==='seed'&&S.tool===i){openSeedPick();return;}
+      S.tool=i;drawToolbar();save();
+      if(TOOLS[i].id==='seed'){
+        const s=selectedSeed();
+        if(seedsHeld().length>1&&!S.toldSeeds){
+          S.toldSeeds=true;save();
+          toast('Tap the seed slot again to pick a different one.',4200);
+        }else if(s&&!inSeason(SEED_OF[s])){
+          toast(String(s).replace(/ seeds?$/i,'')+' will not grow this season — tap again to choose another.',4500);
+        }
+      }
+    };
   });
 }
 
@@ -3007,7 +3084,9 @@ function hintText(){
   if(tool.id==='can')return (p&&p.till&&!p.wet)?(S.cans>0?'Water  (E)':'Can is empty'):'';
   if(tool.id==='seed'){const s=selectedSeed();
     if(!(p&&p.till&&!p.crop&&s))return '';
-    return inSeason(SEED_OF[s])?('Plant '+s+'  (E)'):(CROPS[SEED_OF[s]].name+' is out of season');}
+    return inSeason(SEED_OF[s])
+      ?('Plant '+s+'  (E)')
+      :(CROPS[SEED_OF[s]].name+' is out of season  ·  [ ] to change seed');}
   return '';
 }
 const EATS={Bread:4,Cheese:5,Stew:9,Remedy:6,Salve:8,Berries:2,Egg:3,Milk:2,Butter:3};
@@ -9134,12 +9213,25 @@ function openGive(f){
 
 /* ================= BASKET / MENU ================= */
 function openBag(){
+  /* what you are sowing, and a way to change it */
+  const seedRow=(()=>{
+    const held=seedsHeld();
+    if(!held.length)return '<div class="card"><strong>Seed</strong>'
+      +'<div class="hint">None in the basket. The seed library lends a handful of anything in season.</div></div>';
+    const s=selectedSeed();
+    const ok=s&&inSeason(SEED_OF[s]);
+    return '<div class="row"><div style="min-width:0;"><strong>Sowing: '+esc(String(s).replace(/ seeds?$/i,''))+'</strong>'
+      +'<div class="hint">'+(ok?'<span style="color:var(--green)">in season</span>'
+        :'<span style="color:var(--rose)">will not grow this season</span>')
+      +' \u00b7 '+held.length+' kind'+(held.length===1?'':'s')+' in the basket</div></div>'
+      +'<button class="primary" id="seedPickB">Change</button></div>';
+  })();
   paused=true;
   const rows=S.bag.length?('<div class="grid">'+S.bag.map((b,i)=>
     '<div class="item"><canvas class="ic" data-i="'+i+'" width="32" height="32"></canvas>'
     +'<div style="min-width:0;"><strong>'+esc(b.item)+'</strong><div class="hint">×'+b.n+'</div></div></div>').join('')+'</div>')
     :'<div class="hint">Empty. There are seeds in the library and nobody will ask you for anything in return.</div>';
-  OR('<h3>Basket</h3>'+rows
+  OR('<h3>Basket</h3>'+seedRow+rows
     +'<div class="acts"><button id="eatB">Eat something</button>'
     +'<button class="primary" id="closeB">Close</button></div>');
   const eb=document.getElementById('eatB');if(eb)eb.onclick=openEat;
@@ -9147,6 +9239,8 @@ function openBag(){
     const g=c2.getContext('2d');g.imageSmoothingEnabled=false;
     drawIcon(g,S.bag[parseInt(c2.dataset.i)].item,2);
   });
+  const sp=document.getElementById('seedPickB');
+  if(sp)sp.onclick=()=>openSeedPick();
   document.getElementById('closeB').onclick=close;
 }
 
