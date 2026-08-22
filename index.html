@@ -8954,45 +8954,187 @@ function openSupply(){
   document.getElementById('closeB').onclick=close;
 }
 /* ================= NEEDS BOARD ================= */
+/* ============================================================
+   THE BOARD — what the valley is actually asking of you.
+   Requests stay up. They have reasons. People remember.
+   ============================================================ */
+const ASK_WHY={
+  /* by trade — what that person would plausibly run short of */
+  smith    :[['Ore',3,'The forge is cold and there is a hinge waiting on it.'],
+             ['Wood',6,'Charcoal. Always charcoal.'],
+             ['Stone',4,'The furnace lining has gone again.']],
+  carpenter:[['Wood',8,'A door for the Aubes, and their winter is coming.'],
+             ['Plank',4,'Shelving for the seed library. Long overdue.'],
+             ['Rope',2,'For the roof work. I will not go up without it.']],
+  weaver   :[['Fibre',6,'The loom has been standing idle three days and it bothers me.'],
+             ['Wool',4,'Somebody has to make the winter things and it is going to be me.'],
+             ['Cloth',2,'Patching, mostly. Everybody\u2019s elbows go at once.']],
+  miller   :[['Wheat',6,'The stones want feeding or they wear against each other.'],
+             ['Wood',4,'The shaft housing is splitting.']],
+  baker    :[['Flour',3,'The free shelf was empty by eight this morning.'],
+             ['Wheat',5,'I would rather grind my own than wait.'],
+             ['Butter',2,'For the good bread. There is a difference.']],
+  cook     :[['Meat',3,'A stew, and enough of it for whoever turns up.'],
+             ['Carrot',4,'Everything starts with an onion and a carrot.'],
+             ['Milk',4,'Cheese takes a fortnight and I have not started.']],
+  healer   :[['Sage',3,'One of the little ones has a chest on her.'],
+             ['Mint',3,'For the sickroom. It helps more than you would think.'],
+             ['Remedy',2,'My shelf is bare and that frightens me more than being ill.'],
+             ['Thyme',2,'Salve. Somebody\u2019s hands are in a state.']],
+  herbalist:[['Sage',4,'Drying takes a week and I am a week behind.'],
+             ['Thyme',3,'For the salve. Patrick will not admit he needs it.']],
+  woodsman :[['Rope',2,'Mine went with the last tree, and so nearly did I.'],
+             ['Bread',2,'I am out at the treeline all day. It is a long day.']],
+  ground   :[['Clay',4,'Testing the low field. Something is wrong with it.'],
+             ['Feed',3,'The ground will not give what the animals have not put back.']],
+  warden   :[['Iron',2,'Two gate hinges and a latch.'],
+             ['Plank',3,'The fence by the orchard, again.']],
+  teacher  :[['Berries',5,'Twelve children and a long afternoon. Do not ask.'],
+             ['Cloth',2,'They will paint on anything if you let them.']],
+  maker    :[['Iron',3,'I have an idea and no metal to be wrong with.'],
+             ['Leather',2,'Hinges that do not squeak. It can be done.']],
+  builder  :[['Stone',6,'Foundations. It is all foundations at this time of year.'],
+             ['Brick',4,'The chimney is drawing badly and I know why.']],
+  seedkeep :[['Turnip',4,'Seed stock. What you eat now, nobody plants in spring.'],
+             ['Wheat',4,'The library shelf is thin and it worries me.']],
+};
+const ASK_SEASON={
+  spring:[['Milk',3,'Everything is being born at once and none of it feeds itself.'],
+          ['Plank',3,'Half the valley wants a new gate before the ground dries.']],
+  summer:[['Berries',6,'Preserving, before they go over.'],
+          ['Cloth',3,'Everybody is too hot and half of them are ruining their good shirts.']],
+  autumn:[['Wood',8,'Stacking now or shivering later.'],
+          ['Feed',4,'Whatever the animals do not eat now, they will need in the dark.']],
+  winter:[['Remedy',2,'It goes round every year and every year we are short.'],
+          ['Bread',3,'The days are short and people forget to eat properly.']],
+};
+const ASK_WEATHER={
+  storm:[['Plank',4,'Something came down in the night. It always does.'],
+         ['Rope',2,'Lashing things down before the next one.']],
+  frost:[['Wood',6,'Cold like this eats a woodpile.'],
+         ['Salve',2,'Chilblains. Everybody has them and nobody mentions them.']],
+  heat :[['Milk',3,'It turns before you can carry it anywhere.']],
+  rain :[['Cloth',2,'Everything is damp and staying damp.']],
+};
+const THANKS=[
+  '{who} takes it without ceremony, which from {who} is the whole speech.',
+  '\u201cThat is that sorted,\u201d says {who}. \u201cRight.\u201d',
+  '{who} looks at it, looks at you, and nods once.',
+  '\u201cI will not forget this,\u201d says {who}, and they will not.',
+  '{who} says thank you twice, which is once more than usual.',
+  '\u201cYou did not have to,\u201d says {who}, who very much needed you to.',
+];
+const LAPSED=[
+  '{who} sorted it themselves in the end. It took them longer than it should have.',
+  '{who} has stopped asking. Not crossly. They just stopped.',
+  'The note comes down off the board. Nobody says anything about it.',
+  '{who} went without. It is not the end of the world, and they will say so.',
+];
+function needFor(f){
+  const c=careerById(careerOf(f.id));
+  const pools=[];
+  if(c&&ASK_WHY[c.id])pools.push(ASK_WHY[c.id]);
+  const s=ASK_SEASON[season().id];if(s)pools.push(s);
+  const w=ASK_WEATHER[S.weather];if(w)pools.push(w);
+  if(!pools.length)return null;
+  const pool=pools[Math.floor(Math.random()*pools.length)];
+  const pick=pool[Math.floor(Math.random()*pool.length)];
+  return {item:pick[0],n:pick[1],why:pick[2]};
+}
 function rollNeeds(){
-  if(S.needsDay===S.day&&S.needs.length)return;
-  S.needsDay=S.day;
-  const pool=[];
-  FOLK.forEach(f=>f.likes.forEach(it=>pool.push({who:f.id,item:it})));
-  const out=[];
-  for(let i=0;i<3;i++){
-    const pick=pool[hashStr('nd'+S.day+i+S.runId)%pool.length];
-    if(out.some(o=>o.who===pick.who&&o.item===pick.item))continue;
-    out.push({who:pick.who,item:pick.item,n:1+(hashStr('nn'+S.day+i+S.runId)%3),done:false});
+  S.needs=S.needs||[];
+  /* nothing is wiped — things come down when they are met or run out of time */
+  const before=S.needs.length;
+  S.needs.forEach(nd=>{
+    if(nd.done||nd.lapsed)return;
+    if(S.day>nd.due){
+      nd.lapsed=true;
+      const f=FOLK.find(x=>x.id===nd.who);
+      nd.note=freshLine(LAPSED,{who:f?firstName(f.name):'they'});
+    }
+  });
+  /* clear anything settled more than three days ago */
+  S.needs=S.needs.filter(nd=>(!nd.done&&!nd.lapsed)||S.day-(nd.settled||nd.due)<3);
+  /* keep three or four things wanted at any time */
+  const live=S.needs.filter(nd=>!nd.done&&!nd.lapsed);
+  const want=3+((S.day%3===0)?1:0);
+  const candidates=FOLK.filter(f=>!f.child&&!live.some(nd=>nd.who===f.id));
+  let guard=0;
+  while(S.needs.filter(nd=>!nd.done&&!nd.lapsed).length<want&&candidates.length&&guard++<12){
+    const f=candidates.splice(Math.floor(Math.random()*candidates.length),1)[0];
+    const need=needFor(f);
+    if(!need)continue;
+    S.needs.push({who:f.id,item:need.item,n:need.n,why:need.why,
+      posted:S.day,due:S.day+3+Math.floor(Math.random()*3),done:false,lapsed:false});
   }
-  S.needs=out;save();
+  if(S.needs.length!==before)save();
+}
+function meetNeed(i,inPerson){
+  const nd=S.needs[i];if(!nd||nd.done||nd.lapsed)return false;
+  if(bagCount(nd.item)<nd.n){toast('You are short of that.');return false;}
+  bagTake(nd.item,nd.n);
+  nd.done=true;nd.settled=S.day;
+  const f=FOLK.find(x=>x.id===nd.who);
+  const name=f?firstName(f.name):'they';
+  nd.note=freshLine(THANKS,{who:name});
+  S.folk[nd.who]=S.folk[nd.who]||{friend:0,met:false,askedDay:-1,asked:[],gaveDay:-1};
+  S.folk[nd.who].friend=Math.min(30,(S.folk[nd.who].friend||0)+(inPerson?3:2));
+  S.standing+=(inPerson?3:2);
+  /* sometimes they put something back */
+  if(Math.random()<0.4&&f){
+    const back=(f.likes||['Bread'])[0];
+    bagAdd(back,1);
+    nd.note+='  They press a '+back.toLowerCase()+' on you on the way out.';
+  }
+  SFX.win();save();
+  toast(nd.note,5000);
+  return true;
 }
 function openBoard(){
   paused=true;rollNeeds();
-  const rows=S.needs.map((nd,i)=>{
+  const live=[],settled=[];
+  (S.needs||[]).forEach((nd,i)=>{(nd.done||nd.lapsed)?settled.push([nd,i]):live.push([nd,i]);});
+  const row=([nd,i])=>{
     const f=FOLK.find(x=>x.id===nd.who);
+    const name=f?firstName(f.name):'somebody';
+    const job=careerById(careerOf(nd.who));
     const have=bagCount(nd.item);
-    return '<div class="row need'+(nd.done?' done':'')+'">'
-      +'<div><strong>'+esc(nd.item)+' ×'+nd.n+'</strong>'
-      +'<div class="hint">for '+f.name.split(' ')[0]+' · you have '+have+'</div></div>'
-      +(nd.done?'<span class="hint">seen to</span>'
-        :'<button data-fill="'+i+'"'+(have>=nd.n?'':' disabled')+'>Contribute</button>')
+    const enough=have>=nd.n;
+    const left=nd.due-S.day;
+    const when=left<0?'overdue':left===0?'today':left===1?'by tomorrow':('within '+left+' days');
+    return '<div class="row"><div style="min-width:0;">'
+      +'<strong>'+esc(name)+'</strong>'
+      +(job?(' <span class="hint">\u00b7 '+esc(job.name)+'</span>'):'')
+      +'<div class="hint" style="font-style:italic;">\u201c'+esc(nd.why)+'\u201d</div>'
+      +'<div class="hint">'
+      +'<span style="color:'+(enough?'var(--green)':'var(--rose)')+'">'+have+' of '+nd.n+' '+esc(nd.item)+'</span>'
+      +' \u00b7 <span style="color:'+(left<=0?'var(--rose)':(left<=1?'var(--amber)':'var(--dim)'))+'">'+when+'</span>'
+      +'</div></div>'
+      +(enough?'<button class="primary" data-meet="'+i+'">Take it round</button>'
+              :'<span class="hint">\u2014</span>')
       +'</div>';
-  }).join('');
-  OR('<h3>The needs board</h3>'
-    +'<div class="hint" style="margin-bottom:10px;">Written up by Hollis each morning. Nothing here is bought — it is needed, and somebody sees to it.</div>'
-    +rows
-    +'<div class="card" style="margin-top:12px;"><strong>Standing</strong><div class="hint">'+standingWord()+' — '+S.standing+' things seen to.</div></div>'
+  };
+  const settledRow=([nd,i])=>{
+    const f=FOLK.find(x=>x.id===nd.who);
+    return '<div class="row" style="opacity:.6;"><div style="min-width:0;">'
+      +'<strong>'+esc(f?firstName(f.name):'somebody')+'</strong>'
+      +' <span class="hint">\u00b7 '+esc(nd.n+' '+nd.item)+'</span>'
+      +'<div class="hint">'+esc(nd.note||'')+'</div></div>'
+      +'<span class="hint">'+(nd.done?'\u2713':'\u2014')+'</span></div>';
+  };
+  const arc=(typeof arcNow==='function')?arcNow():null;
+  OR('<h3>The board</h3>'
+    +'<p class="sub">Nobody is owed anything here. This is just what people are short of, '
+    +'and who is short of it.</p>'
+    +(live.length?live.map(row).join('')
+      :'<div class="card"><div class="hint">Nothing wanted today. That happens perhaps twice a year.</div></div>')
+    +(settled.length?('<h3 style="font-size:14px;margin:16px 0 6px;">Lately</h3>'
+      +settled.map(settledRow).join('')):'')
+    +(arc?('<div class="hint" style="margin-top:12px;">'+esc(arc.n)+' \u2014 whatever else is going on, that is yours.</div>'):'')
     +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
-  document.querySelectorAll('[data-fill]').forEach(b=>{b.onclick=async()=>{
-    const nd=S.needs[parseInt(b.dataset.fill)];
-    if(!bagTake(nd.item,nd.n))return;
-    nd.done=true;S.standing++;
-    const f=S.folk[nd.who];f.friend=Math.min(20,f.friend+3);
-    await save();
-    reward(nd.who);
-    openBoard();
-  };});
+  document.querySelectorAll('[data-meet]').forEach(b=>b.onclick=()=>{
+    if(meetNeed(parseInt(b.dataset.meet),false))openBoard();
+  });
   document.getElementById('closeB').onclick=close;
 }
 function standingWord(){
@@ -9114,6 +9256,9 @@ function talkGameRow(f){
     +'<div class="hint">Hollow Hands, Three Bones, and the rest.</div></div>'
     +'<button data-play-games="'+f.id+'">Play</button></div>';
 }
+function needOf(id){
+  return (S.needs||[]).findIndex(nd=>nd.who===id&&!nd.done&&!nd.lapsed);
+}
 function openTalk(f){
   /* on a festival day it is the only thing anybody wants to discuss */
   {
@@ -9122,6 +9267,9 @@ function openTalk(f){
       const fe=festivalToday();
       paused=true;
       const d=S.folk[f.id]||{friend:0};
+  const ni=needOf(f.id);
+  const nd=ni>=0?S.needs[ni]:null;
+  const canGive=nd&&bagCount(nd.item)>=nd.n;
       OR('<div style="display:flex;gap:12px;align-items:flex-start;">'
         +'<canvas class="talkface" width="34" height="34" style="width:34px;height:34px;image-rendering:pixelated;"></canvas>'
         +'<div><h3 style="margin:0;">'+esc(firstName(f.name))+'</h3>'
@@ -9150,6 +9298,14 @@ function openTalk(f){
       +'<div style="flex:1;"><h3>'+esc(firstName(f.name))+'</h3><div class="hint">'
       +esc((careerById(careerOf(f.id))||{}).name||f.role||'')+' · '+friendWord(d.friend)+'</div></div></div>'
       +'<div class="chat" id="ch">'+msgs+'</div>'
+      /* if they have asked for something, it comes up before anything else */
+      +(nd?('<div class="card" style="border-color:'+(canGive?'var(--amber)':'var(--line)')+';">'
+        +'<strong>'+(canGive?'You have what they wanted':'They are short of something')+'</strong>'
+        +'<div class="hint" style="font-style:italic;">\u201c'+esc(nd.why)+'\u201d</div>'
+        +'<div class="hint">'+bagCount(nd.item)+' of '+nd.n+' '+esc(nd.item)+'</div>'
+        +(canGive?'<div class="acts" style="margin-top:8px;">'
+          +'<button class="primary" id="needB">Hand it over</button></div>':'')
+        +'</div>'):'')
       +'<div id="tp"></div>'
       +'<div class="acts"><button id="giveB">Give something</button>'
       +'<button id="gameB">Play a game</button>'
@@ -9160,6 +9316,11 @@ function openTalk(f){
     if(gb)gb.onclick=()=>openGames(f.id);
     document.getElementById('closeB').onclick=close;
     document.getElementById('giveB').onclick=()=>openGive(f);
+    const nb=document.getElementById('needB');
+    if(nb)nb.onclick=()=>{
+      /* handed over in person — worth more than leaving it at the board */
+      if(meetNeed(needOf(f.id),true))close();
+    };
   };
   const renderTopics=()=>{
     const tp=document.getElementById('tp');if(!tp)return;
