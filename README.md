@@ -1,4 +1,4 @@
-Greenhollow — Improved
+reenhollow — Improved
 
 This is an enhanced version of Greenhollow with the following upgrades:
 
@@ -64,3 +64,18 @@ Save key bumped to greenhollow-v5-improved so it does not overwrite your origina
 
 Particle / floating-text FX system (spawnFloat, spawnDust, spawnSplash) ready for further polish
 
+How to run
+
+Serve the folder with any static server, e.g.:
+
+npx serve .
+# or
+python3 -m http.server 8080
+
+Then open http://localhost:8080 (or the port shown).
+
+You can also open index.html directly in a browser; localStorage and audio will still work.
+
+Original
+
+All credit for the world, writing, systems, and art direction belongs to the original Greenhollow at thepeoplesvoices.org.
