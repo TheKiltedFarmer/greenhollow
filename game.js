@@ -1415,7 +1415,7 @@ function refreshTile(x,y){
     Object.values(BLD).some(b=>x>=b.x&&x<b.x+b.w&&y>=b.y&&y<b.y+b.h) ||
     (S.built||[]).some(b=>x>=b.x&&x<b.x+b.w&&y>=b.y&&y<b.y+b.h) ||
     (x===DOOR.x&&y===DOOR.y) ||
-    (x===WELL.x&&y===WELL.y) || (x===TABLE.x&&y===TABLE.y) ||
+    (x===WELL.x&&y===WELL.y) || (y===TABLE.y&&x>=TABLE.x-2&&x<=TABLE.x+2) ||
     x<2 || y<1 || x>=MW-1 || y>=MH-1;
   const nd=S.nodes&&S.nodes[k];
   const nodeBlocks = !!(nd && nd.cut<=S.day && nd.k!=='reed' && nd.k!=='clay');
@@ -1441,7 +1441,8 @@ function buildCollision(){
   for(let y=JETTY.y-1;y<=JETTY.y+1;y++)for(let x=JETTY.x-1;x<=JETTY.x+2;x++)blocked.delete(key(x,y));
   Object.values(BLD).forEach(b=>{for(let y=b.y;y<b.y+b.h;y++)for(let x=b.x;x<b.x+b.w;x++)blk(x,y);});
   TREES.forEach(([x,y])=>blk(x,y));
-  blk(WELL.x,WELL.y);blk(TABLE.x,TABLE.y);
+  blk(WELL.x,WELL.y);
+  for(let tx=TABLE.x-2;tx<=TABLE.x+2;tx++)blk(tx,TABLE.y);
   for(let x=0;x<MW;x++){blk(x,0);blk(x,MH-1);}
   for(let y=0;y<MH;y++){blk(0,y);blk(1,y);}
 }
@@ -1891,16 +1892,61 @@ function draw(){
   ctx.fillStyle='#3A3A42';ctx.fillRect(WELL.x*TILE+8,WELL.y*TILE+12,16,12);
   ctx.fillStyle='#6A5238';ctx.fillRect(WELL.x*TILE+6,WELL.y*TILE,4,10);ctx.fillRect(WELL.x*TILE+22,WELL.y*TILE,4,10);
   ctx.fillStyle='#8C5A3C';ctx.fillRect(WELL.x*TILE+2,WELL.y*TILE-4,28,6);
-  /* sharing table */
-  const tx=TABLE.x*TILE,ty=TABLE.y*TILE;
-  ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillRect(tx+2,ty+TILE-4,TILE,6);
-  ctx.fillStyle='#6A5238';ctx.fillRect(tx,ty+6,TILE,TILE-10);
-  ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillRect(tx,ty+6,TILE,3);
-  (S.shared||[]).slice(0,4).forEach((it,i)=>{
-    ctx.save();ctx.translate(tx+3+i*7,ty+9);ctx.scale(0.5,0.5);drawIcon(ctx,it,1);ctx.restore();
-  });
-  ctx.fillStyle='rgba(237,230,214,0.75)';ctx.font='9px Inter';ctx.textAlign='center';
-  ctx.fillText('the table',tx+16,ty+2);
+  /* sharing table — a real long communal table with benches */
+  {
+    const tw = 5; /* tiles wide */
+    const tx = (TABLE.x - Math.floor(tw/2))*TILE;
+    const ty = TABLE.y*TILE;
+    const W = tw*TILE;
+    /* shadow */
+    ctx.fillStyle='rgba(0,0,0,0.28)';
+    ctx.fillRect(tx+4, ty+TILE-2, W-8, 8);
+    /* table top */
+    ctx.fillStyle='#6E5638';
+    ctx.fillRect(tx+2, ty+8, W-4, 18);
+    ctx.fillStyle='#8C6A42';
+    ctx.fillRect(tx+2, ty+8, W-4, 5);
+    ctx.fillStyle='rgba(0,0,0,0.18)';
+    ctx.fillRect(tx+2, ty+22, W-4, 2);
+    /* legs */
+    ctx.fillStyle='#5A4632';
+    ctx.fillRect(tx+6, ty+24, 5, 10);
+    ctx.fillRect(tx+W-14, ty+24, 5, 10);
+    ctx.fillRect(tx+W/2-3, ty+24, 5, 10);
+    /* north bench */
+    ctx.fillStyle='rgba(0,0,0,0.20)';
+    ctx.fillRect(tx+8, ty-2, W-16, 6);
+    ctx.fillStyle='#5C4630';
+    ctx.fillRect(tx+6, ty-6, W-12, 8);
+    ctx.fillStyle='#6E5638';
+    ctx.fillRect(tx+6, ty-6, W-12, 3);
+    /* south bench */
+    ctx.fillStyle='rgba(0,0,0,0.22)';
+    ctx.fillRect(tx+8, ty+TILE+6, W-16, 6);
+    ctx.fillStyle='#5C4630';
+    ctx.fillRect(tx+6, ty+TILE+2, W-12, 8);
+    ctx.fillStyle='#6E5638';
+    ctx.fillRect(tx+6, ty+TILE+2, W-12, 3);
+    /* items left on the table */
+    (S.shared||[]).slice(0,6).forEach((it,i)=>{
+      ctx.save();
+      ctx.translate(tx+10+i*12, ty+12);
+      ctx.scale(0.55,0.55);
+      drawIcon(ctx,it,1);
+      ctx.restore();
+    });
+    /* subtle card/deck hint so games feel present */
+    ctx.fillStyle='#2A2118';
+    ctx.fillRect(tx+W-28, ty+11, 14, 10);
+    ctx.fillStyle='#C9A44E';
+    ctx.fillRect(tx+W-27, ty+12, 12, 8);
+    ctx.fillStyle='#EDE6D6';
+    ctx.fillRect(tx+W-25, ty+14, 8, 2);
+    ctx.fillStyle='rgba(237,230,214,0.85)';
+    ctx.font='9px Inter';
+    ctx.textAlign='center';
+    ctx.fillText('the table', tx+W/2, ty-10);
+  }
   /* depth-sorted buildings, trees, folk, player */
   const layer=[];
   /* the hunter's hide, up at the treeline */
@@ -2281,12 +2327,20 @@ function folkPos(f){
   const ring=[[0,1],[2,1],[-2,1],[1,2],[-1,2],[3,2],[-3,2],[0,3],[2,3],[-2,3],[4,1],[-4,1],
               [4,2],[-4,2],[1,3],[-1,3],[3,3],[-3,3],[5,1],[-5,1],[0,4],[2,4],[-2,4],[4,3]];
   if(h>=18&&h<21){
-    /* a long table: everyone gets their own place, however many turn up */
-    const all=FOLK.findIndex(x=>x.id===f.id);
-    const perSide=Math.ceil(FOLK.length/2);
+    /* a long table: adults sit close, kids nearby — max 5 per side so it stays intimate */
+    const adults=FOLK.filter(x=>!x.child);
+    const kids=FOLK.filter(x=>x.child);
+    const isKid=!!f.child;
+    const pool=isKid?kids:adults;
+    const all=pool.findIndex(x=>x.id===f.id);
+    const perSide=Math.min(5, Math.ceil(pool.length/2));
     const side=all<perSide?0:1;
     const seat=side===0?all:(all-perSide);
-    return {x:TABLE.x-Math.floor(perSide/2)+seat, y:TABLE.y+(side===0?2:4)};
+    const clamped=Math.max(0, Math.min(perSide-1, seat));
+    const xOff = clamped - Math.floor((perSide-1)/2);
+    /* kids sit a bit further out on the grass */
+    const yOff = isKid ? (side===0?3:5) : (side===0?1:3);
+    return {x:TABLE.x+xOff, y:TABLE.y+yOff};
   }
   const r=ring[i%ring.length];
   return {x:b.door.x+r[0],y:b.door.y+r[1]};
@@ -9110,10 +9164,11 @@ function openTable(){
   /* if somebody is sat here, they will play you */
   const here=FOLK.filter(f=>{
     if(isMe(f)||f.child)return false;
-    if(typeof isIndoorsNow==='function'&&isIndoorsNow(f))return false;  /* they are at work indoors */
-    if(typeof indoors==='function'&&indoors(f))return false;            /* or in bed */
+    if(typeof isIndoorsNow==='function'&&isIndoorsNow(f))return false;
+    if(typeof indoors==='function'&&indoors(f))return false;
     const p=folkPos(f);
-    return p&&Math.abs(p.x-TABLE.x)<=3&&Math.abs(p.y-TABLE.y)<=3;
+    /* wider radius so the long table actually gathers people for games */
+    return p&&Math.abs(p.x-TABLE.x)<=5&&Math.abs(p.y-TABLE.y)<=4;
   });
   S.tableMates=here.map(f=>f.id);
   return openTableInner();
@@ -9144,13 +9199,14 @@ function openTableInner(){
     +'</div>'
     +'<h3 style="font-size:14px;margin:12px 0 6px;">On the table</h3>'+onTable
     +'<h3 style="font-size:14px;margin:16px 0 6px;">In your basket</h3>'+give
+    +'<h3 style="font-size:14px;margin:16px 0 6px;">Hollow Hands</h3>'
+    +'<div class="hint" style="margin-bottom:8px;">The card game they play at this table. Beat someone and they teach you a card.</div>'
     +((S.tableMates&&S.tableMates.length)
-      ? ('<h3 style="font-size:14px;margin:16px 0 6px;">Sat at the table</h3>'
-         +S.tableMates.map(id=>{const f=FOLK.find(x=>x.id===id);if(!f)return '';
+      ? (S.tableMates.map(id=>{const f=FOLK.find(x=>x.id===id);if(!f)return '';
            return '<div class="row"><div><strong>'+esc(firstName(f.name))+'</strong>'
-             +'<div class="hint">would play you a hand</div></div>'
-             +'<button data-game="'+id+'">Games</button></div>';}).join(''))
-      : '<div class="hint" style="margin-top:12px;">Nobody about to play just now. They gather here of an evening.</div>')
+             +'<div class="hint">sat here · will deal you in</div></div>'
+             +'<button class="primary" data-game="'+id+'">Play a hand</button></div>';}).join(''))
+      : '<div class="card"><div class="hint">Nobody is sat here just now. Come back in the evening (after 6) — that is when the valley gathers and someone will deal.</div></div>')
       +'<div class="acts"><button class="primary" id="closeB">Close</button></div>');
   document.querySelectorAll('[data-game]').forEach(b=>b.onclick=()=>openGames(b.dataset.game));
   document.querySelectorAll('[data-give]').forEach(b=>{b.onclick=async()=>{
