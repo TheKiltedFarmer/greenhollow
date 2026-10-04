@@ -6822,19 +6822,34 @@ function insideBlocked(px,py){
   if(tx<1||ty<1||tx>=roomW()-1||ty>=roomH())return true;
   const sp=insideSpec(S.inside);
   if(!sp)return false;
+  // Use a slightly smaller hitbox (feet) so you can stand at the front edge of tables/counters
+  const footY = py; // already the foot sample from the caller
   for(const st of sp.stations){
     const [w,h]=STATION_SIZE[st.k]||[1,1];
-    if(tx>=st.x&&tx<st.x+w&&ty>=st.y&&ty<st.y+h)return true;
+    // only block the upper portion of multi-tile stations so you can approach from the front
+    const blockBottom = st.y + Math.max(0, h - 1);
+    if(tx>=st.x&&tx<st.x+w&&ty>=st.y&&ty<blockBottom+1 && ty < st.y+h){
+      // allow the southernmost row of the station (front edge) so interaction feels natural
+      if(h>1 && ty === st.y+h-1) continue;
+      if(h===1 && (footY % TILE) > 20) continue; // front 12px of single-tile stations are walkable
+      return true;
+    }
   }
   for(const p of (sp.props||[])){
     const [w,h]=PROP_SIZE[p[2]]||[1,1];
-    if(w===0)continue;                    /* rugs and hanging things are not in the way */
-    if(tx>=p[0]&&tx<p[0]+w&&ty>=p[1]&&ty<p[1]+h)return true;
+    if(w===0)continue;
+    if(tx>=p[0]&&tx<p[0]+w&&ty>=p[1]&&ty<p[1]+h){
+      if(h===1 && (footY % TILE) > 20) continue;
+      return true;
+    }
   }
   for(const m of ((S.myStuff&&S.myStuff[roomKey()])||[])){
     const [w,h]=PROP_SIZE[m.t]||[1,1];
     if(w===0)continue;
-    if(tx>=m.x&&tx<m.x+w&&ty>=m.y&&ty<m.y+h)return true;
+    if(tx>=m.x&&tx<m.x+w&&ty>=m.y&&ty<m.y+h){
+      if(h===1 && (footY % TILE) > 20) continue;
+      return true;
+    }
   }
   return false;
 }
@@ -6967,12 +6982,13 @@ function drawInside(){
   /* scenery */
   (sp.props||[]).forEach(p=>{
     const [x,y,t]=p;
-    layerProps.push({y:(y+1)*TILE,f:()=>drawProp(t,x,y)});
+    // sort near the visual bottom of the prop so player in front draws on top
+    layerProps.push({y:(y+0.85)*TILE,f:()=>drawProp(t,x,y)});
   });
   /* and anything you have put here yourself */
   ((S.myStuff&&S.myStuff[roomKey()])||[]).forEach(m=>{
     const tint=(DYES.find(d=>d.id===m.dye)||{}).c;
-    layerProps.push({y:(m.y+1)*TILE,f:()=>drawProp(m.t,m.x,m.y,tint)});
+    layerProps.push({y:(m.y+0.85)*TILE,f:()=>drawProp(m.t,m.x,m.y,tint)});
   });
   /* the piece in your arms, ghosted where it would land */
   if(S.carrying){
@@ -6989,7 +7005,8 @@ function drawInside(){
   const near=nearStation();
   const layer=[];
   sp.stations.forEach(st=>{
-    layer.push({y:(st.y+1)*TILE,f:()=>drawStation(st,near&&near===st)});
+    // tables/counters sort a bit lower so standing at their front edge draws you in front
+    layer.push({y:(st.y+0.9)*TILE,f:()=>drawStation(st,near&&near===st)});
   });
   /* folk who work here — at their own machine, and moving */
   const h=S.min/60;
@@ -7018,7 +7035,7 @@ function drawInside(){
     else w.step=0;
     const busy=mine?('at '+mine.label.toLowerCase().replace(/^the /,'')):
       (c?c.verb:'about their work');
-    layer.push({y:w.y+24,f:()=>{
+    layer.push({y:w.y+40,f:()=>{
       drawPerson(ctx,w.x-16,w.y-24,f.pal,w.step,w.face);
       ctx.font='10px Inter';ctx.textAlign='center';
       ctx.fillStyle='rgba(237,230,214,0.9)';
@@ -7034,7 +7051,8 @@ function drawInside(){
       }
     }});
   });
-  layer.push({y:S.ipy+24,f:()=>{
+  // Sort key = approximate feet position so player correctly passes in front of / behind furniture
+  layer.push({y:S.ipy+40,f:()=>{
     const me=meFolk();
     const pal=me?me.pal:{skin:S.player.skin,hair:S.player.hair,shirt:S.player.top,pants:'#3A3A42'};
     drawPerson(ctx,S.ipx,S.ipy,pal,pstep,pface);
